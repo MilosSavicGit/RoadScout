@@ -2,6 +2,7 @@
 Find cultural attractions along your driving route
 
 A trip-planning web app that scans your driving route for cultural attractions worth stopping for — historic sites, museums, viewpoints, monuments, and more — listed in the order you'll reach them along the way.
+Code is written to work in most of the world using local language. Very long trips may not return the list since they may timeout. The best is to divide the trip in smaller segments.
 
 ## What it does
 
