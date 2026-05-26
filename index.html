@@ -182,6 +182,14 @@
     margin-bottom: 16px;
   }
   .detail h2 { margin: 0 0 6px; font-size: 24px; }
+  /* number badge next to the detail title, matching the map pins */
+  .num-badge {
+    display: inline-grid; place-items: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent-2); color: #fff;
+    font-size: 15px; font-weight: 700;
+    vertical-align: middle; margin-right: 6px;
+  }
   .detail .summary { line-height: 1.6; font-size: 15px; margin: 14px 0; }
   .detail img { width: 100%; border-radius: 8px; margin: 10px 0; }
 
@@ -203,6 +211,21 @@
   .tally b { color: var(--ink); }
 
   #map { width: 100%; height: 100%; }
+
+  /* Map style switcher (Streets / Outdoor / Satellite) */
+  #styleSwitcher {
+    position: absolute; top: 12px; right: 12px; z-index: 20;
+    display: flex; gap: 4px;
+    background: rgba(255,253,248,.9); padding: 4px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  .style-btn {
+    font: inherit; font-size: 12px; padding: 5px 10px;
+    border: none; border-radius: 5px; background: transparent;
+    color: var(--ink); cursor: pointer;
+  }
+  .style-btn:hover { background: rgba(0,0,0,.06); }
+  .style-btn.active { background: var(--accent); color: #fff; }
 
   .empty { color: var(--muted); font-style: italic; margin-top: 20px; font-size: 14px; }
 </style>
@@ -268,6 +291,11 @@
 
   <!-- ===================== RIGHT: the map ===================== -->
   <div id="map"></div>
+  <div id="styleSwitcher">
+    <button class="style-btn active" data-style="streets">Streets</button>
+    <button class="style-btn" data-style="outdoor">Outdoor</button>
+    <button class="style-btn" data-style="satellite">Satellite</button>
+  </div>
 </div>
 
 <script>
@@ -285,16 +313,30 @@
    for calls to the database and nothing else changes.
    ================================================================ */
 
-/* ---------- 0. Map setup (free demo tiles, no token) ----------
+/* ---------- 0. Map setup (MapTiler tiles) ----------
    We guard this: if the map library failed to load from the CDN
    (offline, blocked, slow network), the app still works — you just
    get the list without the visual map, instead of a blank crash. */
+
+// MapTiler API key. To change it, replace the string below.
+// (Public client-side key — fine to expose; restrict it to your domain
+//  in your MapTiler account settings when you go live, to protect quota.)
+const MAPTILER_KEY = 'L0PMr6QA6YPkhSS8n4Sv';
+
+// The three basemap styles offered via the switcher. "hybrid" = satellite + labels.
+const MAP_STYLES = {
+  streets:   `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`,
+  outdoor:   `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${MAPTILER_KEY}`,
+  satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`
+};
+let currentStyle = 'streets';   // default
+
 let map = null;
 const mapReady = (typeof maplibregl !== 'undefined');
 if (mapReady) {
   map = new maplibregl.Map({
     container: 'map',
-    style: 'https://demotiles.maplibre.org/style.json',
+    style: MAP_STYLES[currentStyle],
     center: [20.45, 44.9],
     zoom: 7
   });
@@ -307,6 +349,23 @@ if (mapReady) {
 
 /* Turf is required for the scan itself. If it's missing, tell the user clearly. */
 const turfReady = (typeof turf !== 'undefined');
+
+/* ---------- Map style switcher ----------
+   Switching MapLibre's style WIPES any layers/sources we added (routes, pins),
+   so after the new style loads we re-draw whatever's currently on screen. */
+function switchMapStyle(styleName) {
+  if (!mapReady || !map || !MAP_STYLES[styleName]) return;
+  currentStyle = styleName;
+  map.setStyle(MAP_STYLES[styleName]);
+  // once the new style finishes loading, redraw routes + pins
+  map.once('styledata', () => {
+    if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes);
+    if (currentStops && currentStops.length) drawPins(currentStops);
+  });
+  // update which switcher button looks active
+  document.querySelectorAll('.style-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.style === styleName));
+}
 
 /* ---------- in-memory state ---------- */
 let currentStops = [];          // the scanned POIs, in route order
@@ -769,11 +828,12 @@ function renderList(stops) {
 async function openDetail(poiId) {
   activeStopId = poiId;
   const s = currentStops.find(x => x.id === poiId);
+  const num = currentStops.findIndex(x => x.id === poiId) + 1;  // its position in the list
   document.querySelectorAll('.stop').forEach(el =>
     el.classList.toggle('active', el.dataset.id === poiId));
 
   const body = $('detailBody');
-  body.innerHTML = `<h2>${s.name}</h2>
+  body.innerHTML = `<h2><span class="num-badge">${num}</span> ${s.name}</h2>
     <div class="meta" style="color:var(--muted);font-size:13px">
       ${s.kind} · ${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour</div>
     <div class="summary">Loading description…</div>`;
@@ -794,7 +854,7 @@ async function openDetail(poiId) {
          🌐 Translate to English (${info.lang})</button>`
     : '';
   body.innerHTML = `
-    <h2 id="titleText">${s.name}</h2>
+    <h2 id="titleText"><span class="num-badge">${num}</span> ${s.name}</h2>
     <div class="meta" style="color:var(--muted);font-size:13px">
       ${s.kind} · ${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour</div>
     ${addrLine}
@@ -823,7 +883,7 @@ async function openDetail(poiId) {
         translateToEnglish(info.text, info.lang)
       ]);
       if (tDesc) $('summaryText').textContent = tDesc;
-      if (tTitle) $('titleText').textContent = tTitle;
+      if (tTitle) $('titleText').innerHTML = `<span class="num-badge">${num}</span> ${tTitle}`;
       if (tDesc || tTitle) {
         btn.textContent = '✓ Translated to English';
       } else {
@@ -842,6 +902,11 @@ $('back').onclick = () => {
   $('detail').classList.remove('open');   // hide detail -> list reappears
   $('detail').scrollTop = 0;              // reset scroll for next time
 };
+
+/* Wire up the map style switcher buttons */
+document.querySelectorAll('.style-btn').forEach(btn => {
+  btn.onclick = () => switchMapStyle(btn.dataset.style);
+});
 
 /* =====================================================================
    selectRoute — called when the user clicks one of the coloured routes.
