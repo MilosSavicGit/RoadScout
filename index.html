@@ -230,12 +230,23 @@
     <div class="row">
       <div class="field">
         <label>Corridor width (km each side)</label>
-        <input id="width" type="number" value="3" min="0.5" max="20" step="0.5">
+        <input id="width" type="number" value="1" min="0.5" max="20" step="0.5">
       </div>
       <div class="field">
         <label>Max detour (km off route)</label>
         <input id="maxDetour" type="number" value="2" min="0.1" max="20" step="0.5">
       </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Max attractions (most notable kept)</label>
+        <input id="maxAttractions" type="number" value="200" min="5" max="500" step="5">
+      </div>
+    </div>
+    <div class="controls-note" style="color:var(--accent);margin-top:6px">
+      ⚠ A wider corridor finds more, but on a long route it can return too many
+      points and the search may fail. If that happens, keep the corridor narrow,
+      or scan a shorter route.
     </div>
 
     <button class="go" id="go">Show routes</button>
@@ -401,7 +412,7 @@ async function getRoutes(from, to) {
         -> that single number gives us travel order + detour distance
      e) sort by along-route distance
    ===================================================================== */
-async function corridorScan(routeLine, widthKm, maxDetourKm) {
+async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
   // (a) build the corridor polygon around the route
   const corridor = turf.buffer(routeLine, widthKm, { units: 'kilometers' });
 
@@ -434,7 +445,7 @@ async function corridorScan(routeLine, widthKm, maxDetourKm) {
     const r = await fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST', body: query, signal: controller.signal
     });
-    if (!r.ok) throw new Error(`Overpass returned ${r.status} (server busy or query too large)`);
+    if (!r.ok) throw new Error(`the search was too large (server returned ${r.status}). Try a narrower corridor or a shorter route.`);
     j = await r.json();
   } catch (err) {
     clearTimeout(abortTimer);
@@ -492,6 +503,33 @@ async function corridorScan(routeLine, widthKm, maxDetourKm) {
     const dup = deduped.find(q => q.name === p.name && Math.abs(q.alongKm - p.alongKm) < 1);
     if (!dup) deduped.push(p);
   }
+
+  // (f) NOTABILITY TRIM: if there are more than maxAttractions, keep only the
+  //     most notable ones. "Notable" = has an OSM wikidata/wikipedia link
+  //     (a free, instant signal we already captured). We keep all notable ones
+  //     first; if that's still over the cap, keep the closest-to-route among
+  //     them; if there aren't ENOUGH notable ones (sparse regions), we fill up
+  //     to the cap with the closest-to-route untagged ones, so we never end up
+  //     with too few. Finally we re-sort by travel order for display.
+  if (maxAttractions && deduped.length > maxAttractions) {
+    const notable = deduped.filter(p => p.wikidata || p.wikipedia);
+    const others  = deduped.filter(p => !(p.wikidata || p.wikipedia));
+
+    let kept;
+    if (notable.length >= maxAttractions) {
+      // plenty of notable ones -> keep the closest-to-route notable ones
+      kept = notable.sort((a, b) => a.detourKm - b.detourKm).slice(0, maxAttractions);
+    } else {
+      // not enough notable -> take all notable, fill with closest untagged ones
+      const fill = others.sort((a, b) => a.detourKm - b.detourKm)
+                         .slice(0, maxAttractions - notable.length);
+      kept = notable.concat(fill);
+    }
+    // re-sort the kept set back into travel order so the list reads in sequence
+    kept.sort((a, b) => a.alongKm - b.alongKm);
+    return kept;
+  }
+
   return deduped;
 }
 
@@ -573,6 +611,29 @@ async function fetchFromWiki(name, lang) {
     return null;
   }
 }
+
+/* Translate text to English using Google Translate's free, KEYLESS endpoint.
+   NOTE: this is an UNOFFICIAL, undocumented endpoint — it works and needs no
+   account, but Google could change or block it at any time, and it may
+   rate-limit under heavy use. Fine for a prototype; for a robust app, switch
+   to a proper translation API (e.g. DeepL free tier) with a key.
+   `from` is the source language code (e.g. 'sr','th','mn'); 'auto' also works. */
+async function translateToEnglish(text, from = 'auto') {
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx` +
+                `&sl=${from}&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    // Response is a nested array; the translated chunks are in j[0], each [translated, original, ...]
+    if (!Array.isArray(j) || !Array.isArray(j[0])) return null;
+    return j[0].map(seg => (seg && seg[0]) ? seg[0] : '').join('');
+  } catch (e) {
+    console.log('translate failed:', e);
+    return null;
+  }
+}
+
 
 /* Main enrichment: takes the whole stop object so it can see OSM tags. */
 async function fetchSummary(stop) {
@@ -725,13 +786,21 @@ async function openDetail(poiId) {
   const descHtml = info && info.text
     ? info.text
     : 'No description found for this place.';
+  // Show a translate button only when we have a description that isn't English.
+  const showTranslate = info && info.text && info.lang && info.lang !== 'en';
+  const translateBtn = showTranslate
+    ? `<button id="translateBtn" style="margin-top:8px;padding:6px 12px;font:inherit;font-size:13px;
+         border:1px solid var(--rule);border-radius:6px;background:#fff;cursor:pointer">
+         🌐 Translate to English (${info.lang})</button>`
+    : '';
   body.innerHTML = `
-    <h2>${s.name}</h2>
+    <h2 id="titleText">${s.name}</h2>
     <div class="meta" style="color:var(--muted);font-size:13px">
       ${s.kind} · ${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour</div>
     ${addrLine}
     ${info && info.img ? `<img src="${info.img}" alt="">` : ''}
-    <div class="summary">${descHtml}</div>
+    <div class="summary" id="summaryText">${descHtml}</div>
+    ${translateBtn}
 
     <div class="verdict-q">Did you stop here? Your verdict:</div>
     <div class="verdicts">
@@ -741,6 +810,28 @@ async function openDetail(poiId) {
     </div>
     <div class="tally">Community: <b>${t.good}</b> worth it · <b>${t.meh}</b> meh · <b>${t.skip}</b> skip
       <br><span style="font-size:11px">(in-memory for now — becomes shared once Supabase is wired in)</span></div>`;
+
+  // Translate button handler: translates BOTH the title and the description.
+  if (showTranslate) {
+    $('translateBtn').onclick = async () => {
+      const btn = $('translateBtn');
+      btn.textContent = 'Translating…';
+      btn.disabled = true;
+      // translate title and description in parallel for speed
+      const [tTitle, tDesc] = await Promise.all([
+        translateToEnglish(s.name, info.lang),
+        translateToEnglish(info.text, info.lang)
+      ]);
+      if (tDesc) $('summaryText').textContent = tDesc;
+      if (tTitle) $('titleText').textContent = tTitle;
+      if (tDesc || tTitle) {
+        btn.textContent = '✓ Translated to English';
+      } else {
+        btn.textContent = '⚠ Translation failed — try again';
+        btn.disabled = false;
+      }
+    };
+  }
 
   $('v-good').onclick = () => { saveVerdict(poiId,'good'); openDetail(poiId); };
   $('v-meh').onclick  = () => { saveVerdict(poiId,'meh');  openDetail(poiId); };
@@ -777,9 +868,10 @@ async function selectRoute(idx) {
     routeWikiLang = await detectWikiLang(mLng, mLat);
     if (routeWikiLang) status(`Route ${idx + 1}: local language detected (${routeWikiLang}). Scanning…`);
 
-    const widthKm = parseFloat($('width').value) || 3;
+    const widthKm = parseFloat($('width').value) || 1;
     const maxDetourKm = parseFloat($('maxDetour').value) || 2;
-    currentStops = await corridorScan(route.geometry, widthKm, maxDetourKm);
+    const maxAttractions = parseInt($('maxAttractions').value) || 200;
+    currentStops = await corridorScan(route.geometry, widthKm, maxDetourKm, maxAttractions);
     const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
     status(`Route ${idx + 1}: found ${currentStops.length} stops along the way${langNote}.`);
     drawPins(currentStops);
