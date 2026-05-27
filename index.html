@@ -15,6 +15,7 @@
 <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
   /* ---- Theme tokens: change these to restyle the whole app ---- */
@@ -265,6 +266,10 @@
         <label>Max attractions (most notable kept)</label>
         <input id="maxAttractions" type="number" value="200" min="5" max="500" step="5">
       </div>
+      <div class="field">
+        <label>Reject wrong matches over (km)</label>
+        <input id="maxWrongKm" type="number" value="50" min="5" max="500" step="5">
+      </div>
     </div>
     <div class="controls-note" style="color:var(--accent);margin-top:6px">
       ⚠ A wider corridor finds more, but on a long route it can return too many
@@ -369,11 +374,41 @@ function switchMapStyle(styleName) {
 
 /* ---------- in-memory state ---------- */
 let currentStops = [];          // the scanned POIs, in route order
-const verdicts = {};            // { poiId: 'good'|'meh'|'skip' }  (later: Supabase)
 let activeStopId = null;
 let currentRoutes = [];         // all alternative routes from OSRM
 let selectedRouteIdx = null;    // which route the user clicked to scan
 let routeWikiLang = null;       // local Wikipedia language for this route (e.g. 'de','sr')
+
+/* =====================================================================
+   SUPABASE — persistent, shared community verdicts
+   ===================================================================== */
+
+// Connection details (publishable key is safe to expose; it only grants what
+// the RLS policies allow, which is just public read + insert on verdicts).
+const SUPABASE_URL  = 'https://alvckuspgkjfxqlxikhl.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_ivjezOdTfRGWGGEuobn_mw_5hnya-Ux';
+
+// Initialize the Supabase client (guarded — if the library failed to load,
+// the app still runs, just without community verdicts).
+const supaReady = (typeof supabase !== 'undefined');
+const supa = supaReady ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+// Per-device anonymous identifier so we can recognize a user's own verdicts
+// (to highlight them in the UI) without requiring accounts. Generated once
+// per device and saved in localStorage — no signup, no tracking beyond this.
+function getUserToken() {
+  let t = localStorage.getItem('cm_user_token');
+  if (!t) {
+    t = 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('cm_user_token', t);
+  }
+  return t;
+}
+const USER_TOKEN = getUserToken();
+
+// Cache of tallies keyed by place_id, populated by getTally on demand.
+// We don't fetch every place's tally up-front; we fetch on detail open.
+const tallyCache = {};
 
 // distinct colours for up to 3+ routes (selected one gets full opacity)
 const ROUTE_COLORS = ['#b5471f', '#2f6b4f', '#3a5a8c', '#8a5a2b', '#6b3a6b'];
@@ -650,11 +685,14 @@ async function fetchByWikidata(qid, preferLang) {
 }
 
 /* Tier 2 fallback: SEARCH one Wikipedia language edition by name and return
-   the top hit's summary. No location check — we accept whatever search finds,
-   which maximizes coverage (good for sparsely-tagged regions like Russia) at
-   the cost of an occasional wrong-place match. Tier 1 (OSM tags) is unaffected
-   and stays reliable; this looseness only applies to untagged places. */
-async function fetchFromWiki(name, lang) {
+   the top hit's summary, then SANITY-CHECK its location. If the found article
+   has coordinates more than `maxKm` from the attraction, we reject it — this
+   kills wrong-place matches like "Park Imperial" (Palm Springs) matching the
+   Forbidden City (Beijing). The threshold is generous by default (~50 km) so
+   only egregious wrong-country/continent matches are rejected, keeping good
+   coverage of reasonable near-matches. Articles with NO coordinates are kept
+   (many real places lack coords in Wikipedia; rejecting them all cut too much). */
+async function fetchFromWiki(name, lang, stopLat, stopLng, maxKm) {
   try {
     const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search` +
       `&srsearch=${encodeURIComponent(name)}&format=json&origin=*&srlimit=1`;
@@ -663,7 +701,33 @@ async function fetchFromWiki(name, lang) {
     const hit = sj?.query?.search?.[0];
     if (!hit) return null;
     const res = await fetchByTitle(hit.title, lang);
-    if (res) res.exact = false;   // mark as a fuzzy (search) match
+    if (!res) return null;
+
+    // STRICT location check for fuzzy (search) matches: the article MUST have
+    // coordinates, and they must be near the attraction. This rejects two kinds
+    // of wrong match at once:
+    //   - wrong PLACE (e.g. Beijing's Forbidden City for a Palm Springs building)
+    //     -> has coords, but they're far away -> rejected.
+    //   - wrong CONCEPT (e.g. "Turban" the headwear for a viewpoint named Turban)
+    //     -> a concept article has NO coordinates -> rejected.
+    // A genuine place almost always has coordinates in Wikipedia; a concept
+    // almost never does. So "must have coords near here" is one rule for both.
+    // Trade-off: real but very obscure places whose articles lack coords are
+    // also dropped (shown as "no description") — but those are exactly the
+    // cases where a fuzzy name-match is least trustworthy anyway.
+    if (stopLat != null && stopLng != null) {
+      if (!res.coord) {
+        console.log(`rejected (no coordinates — likely a concept, not a place): "${hit.title}" for`, name);
+        return null;
+      }
+      const distKm = turf.distance([stopLng, stopLat], [res.coord.lng, res.coord.lat],
+                                   { units: 'kilometers' });
+      if (distKm > maxKm) {
+        console.log(`rejected (${distKm.toFixed(0)} km away — wrong place): "${hit.title}" for`, name);
+        return null;
+      }
+    }
+    res.exact = false;   // mark as a fuzzy (search) match that passed the check
     return res;
   } catch (e) {
     console.log(`wiki(${lang}) failed for`, name, e);
@@ -711,30 +775,85 @@ async function fetchSummary(stop) {
     if (res) return res;
   }
 
-  // ---- Tier 2: no precise OSM link -> best-effort name SEARCH. Local
-  //      language first, then English. Returns whatever search finds (no
-  //      location check), maximizing coverage. Tagged places (Tier 1) stay
-  //      reliable; only untagged places use this looser path. ----
+  // ---- Tier 2: no precise OSM link -> best-effort name SEARCH, with a
+  //      GENEROUS coordinate check that rejects only far-off (wrong-place)
+  //      matches. Local language first, then English. ----
+  const maxKm = parseFloat($('maxWrongKm')?.value) || 50;
   if (routeWikiLang && routeWikiLang !== 'en') {
-    const local = await fetchFromWiki(stop.name, routeWikiLang);
+    const local = await fetchFromWiki(stop.name, routeWikiLang, stop.lat, stop.lng, maxKm);
     if (local) return local;
   }
-  const en = await fetchFromWiki(stop.name, 'en');
+  const en = await fetchFromWiki(stop.name, 'en', stop.lat, stop.lng, maxKm);
   if (en) return en;
 
-  return null;   // genuinely nothing found -> honest "no description"
+  return null;   // nothing reliable found -> honest "no description"
 }
 
 /* =====================================================================
-   STAGE 3b — ratings. In-memory now; swap for Supabase later.
-   These two functions are the ONLY thing that changes when you add a backend.
+   STAGE 3b — ratings, now backed by Supabase (persistent, shared).
+   These were once the only in-memory placeholders; now they talk to a
+   real database. Everything else in the app is unchanged.
    ===================================================================== */
-function saveVerdict(poiId, verdict) { verdicts[poiId] = verdict; }
-function getTally(poiId) {
-  // With a real backend this returns counts from all users. For now,
-  // it just reflects this device's own single verdict.
-  const mine = verdicts[poiId];
-  return { good: mine==='good'?1:0, meh: mine==='meh'?1:0, skip: mine==='skip'?1:0, mine };
+
+/* Save (or update) this device's verdict for a place. If the user clicks
+   a different verdict than they cast before, we DELETE the old one and
+   insert the new — net effect: one verdict per device per place. */
+async function saveVerdict(poiId, verdict) {
+  if (!supaReady || !supa) {
+    console.log('Supabase not ready — verdict not saved.');
+    return;
+  }
+  try {
+    // remove any prior verdict from this device on this place
+    await supa.from('verdicts')
+      .delete()
+      .eq('place_id', poiId)
+      .eq('user_token', USER_TOKEN);
+    // insert the new one
+    const { error } = await supa.from('verdicts').insert({
+      place_id: poiId,
+      verdict: verdict,
+      user_token: USER_TOKEN
+    });
+    if (error) console.log('saveVerdict error:', error.message);
+    // invalidate cached tally so the next read fetches fresh counts
+    delete tallyCache[poiId];
+  } catch (e) {
+    console.log('saveVerdict failed:', e);
+  }
+}
+
+/* Fetch the community tally for a place: counts of good/meh/skip across
+   ALL users, plus what THIS device cast (so we can highlight it). */
+async function getTally(poiId) {
+  // serve from cache if we've fetched it recently in this session
+  if (tallyCache[poiId]) return tallyCache[poiId];
+
+  if (!supaReady || !supa) {
+    return { good: 0, meh: 0, skip: 0, mine: null };
+  }
+  try {
+    const { data, error } = await supa.from('verdicts')
+      .select('verdict, user_token')
+      .eq('place_id', poiId);
+    if (error) {
+      console.log('getTally error:', error.message);
+      return { good: 0, meh: 0, skip: 0, mine: null };
+    }
+    let good = 0, meh = 0, skip = 0, mine = null;
+    for (const row of (data || [])) {
+      if (row.verdict === 'good') good++;
+      else if (row.verdict === 'meh') meh++;
+      else if (row.verdict === 'skip') skip++;
+      if (row.user_token === USER_TOKEN) mine = row.verdict;
+    }
+    const tally = { good, meh, skip, mine };
+    tallyCache[poiId] = tally;
+    return tally;
+  } catch (e) {
+    console.log('getTally failed:', e);
+    return { good: 0, meh: 0, skip: 0, mine: null };
+  }
 }
 
 /* =====================================================================
@@ -841,7 +960,7 @@ async function openDetail(poiId) {
 
   // enrichment (Wikipedia) — pass the whole stop so it can use OSM tags
   const info = await fetchSummary(s);
-  const t = getTally(poiId);
+  const t = await getTally(poiId);
   const addrLine = s.addr ? `<div class="meta" style="color:var(--muted);font-size:12px;margin-top:2px">📍 ${s.addr}</div>` : '';
   const descHtml = info && info.text
     ? info.text
@@ -869,7 +988,7 @@ async function openDetail(poiId) {
       <button id="v-skip" class="${t.mine==='skip'?'sel-skip':''}">Skip it</button>
     </div>
     <div class="tally">Community: <b>${t.good}</b> worth it · <b>${t.meh}</b> meh · <b>${t.skip}</b> skip
-      <br><span style="font-size:11px">(in-memory for now — becomes shared once Supabase is wired in)</span></div>`;
+      <br><span style="font-size:11px">(shared across all visitors — your verdict is saved)</span></div>`;
 
   // Translate button handler: translates BOTH the title and the description.
   if (showTranslate) {
@@ -893,9 +1012,9 @@ async function openDetail(poiId) {
     };
   }
 
-  $('v-good').onclick = () => { saveVerdict(poiId,'good'); openDetail(poiId); };
-  $('v-meh').onclick  = () => { saveVerdict(poiId,'meh');  openDetail(poiId); };
-  $('v-skip').onclick = () => { saveVerdict(poiId,'skip'); openDetail(poiId); };
+    $('v-good').onclick = async () => { await saveVerdict(poiId,'good'); openDetail(poiId); };
+    $('v-meh').onclick  = async () => { await saveVerdict(poiId,'meh');  openDetail(poiId); };
+    $('v-skip').onclick = async () => { await saveVerdict(poiId,'skip'); openDetail(poiId); };
 }
 
 $('back').onclick = () => {
