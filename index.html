@@ -266,10 +266,6 @@
         <label>Max attractions (most notable kept)</label>
         <input id="maxAttractions" type="number" value="200" min="5" max="500" step="5">
       </div>
-      <div class="field">
-        <label>Reject wrong matches over (km)</label>
-        <input id="maxWrongKm" type="number" value="50" min="5" max="500" step="5">
-      </div>
     </div>
     <div class="controls-note" style="color:var(--accent);margin-top:6px">
       ⚠ A wider corridor finds more, but on a long route it can return too many
@@ -685,13 +681,10 @@ async function fetchByWikidata(qid, preferLang) {
 }
 
 /* Tier 2 fallback: SEARCH one Wikipedia language edition by name and return
-   the top hit's summary, then SANITY-CHECK its location. If the found article
-   has coordinates more than `maxKm` from the attraction, we reject it — this
-   kills wrong-place matches like "Park Imperial" (Palm Springs) matching the
-   Forbidden City (Beijing). The threshold is generous by default (~50 km) so
-   only egregious wrong-country/continent matches are rejected, keeping good
-   coverage of reasonable near-matches. Articles with NO coordinates are kept
-   (many real places lack coords in Wikipedia; rejecting them all cut too much). */
+   the top hit. No location check — we accept whatever search finds, which
+   maximizes coverage (lesser-known places, sparsely-tagged regions) at the
+   cost of an occasional wrong-place / wrong-concept match. Tier 1 (OSM tags)
+   remains reliable; this looseness only applies to untagged places. */
 async function fetchFromWiki(name, lang, stopLat, stopLng, maxKm) {
   try {
     const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search` +
@@ -702,32 +695,7 @@ async function fetchFromWiki(name, lang, stopLat, stopLng, maxKm) {
     if (!hit) return null;
     const res = await fetchByTitle(hit.title, lang);
     if (!res) return null;
-
-    // STRICT location check for fuzzy (search) matches: the article MUST have
-    // coordinates, and they must be near the attraction. This rejects two kinds
-    // of wrong match at once:
-    //   - wrong PLACE (e.g. Beijing's Forbidden City for a Palm Springs building)
-    //     -> has coords, but they're far away -> rejected.
-    //   - wrong CONCEPT (e.g. "Turban" the headwear for a viewpoint named Turban)
-    //     -> a concept article has NO coordinates -> rejected.
-    // A genuine place almost always has coordinates in Wikipedia; a concept
-    // almost never does. So "must have coords near here" is one rule for both.
-    // Trade-off: real but very obscure places whose articles lack coords are
-    // also dropped (shown as "no description") — but those are exactly the
-    // cases where a fuzzy name-match is least trustworthy anyway.
-    if (stopLat != null && stopLng != null) {
-      if (!res.coord) {
-        console.log(`rejected (no coordinates — likely a concept, not a place): "${hit.title}" for`, name);
-        return null;
-      }
-      const distKm = turf.distance([stopLng, stopLat], [res.coord.lng, res.coord.lat],
-                                   { units: 'kilometers' });
-      if (distKm > maxKm) {
-        console.log(`rejected (${distKm.toFixed(0)} km away — wrong place): "${hit.title}" for`, name);
-        return null;
-      }
-    }
-    res.exact = false;   // mark as a fuzzy (search) match that passed the check
+    res.exact = false;   // mark as a fuzzy (search) match
     return res;
   } catch (e) {
     console.log(`wiki(${lang}) failed for`, name, e);
@@ -775,18 +743,18 @@ async function fetchSummary(stop) {
     if (res) return res;
   }
 
-  // ---- Tier 2: no precise OSM link -> best-effort name SEARCH, with a
-  //      GENEROUS coordinate check that rejects only far-off (wrong-place)
-  //      matches. Local language first, then English. ----
-  const maxKm = parseFloat($('maxWrongKm')?.value) || 50;
+  // ---- Tier 2: no precise OSM link -> best-effort name SEARCH.
+  //      Coverage-first: accept whatever search finds (local language first,
+  //      then English), accepting occasional wrong-place / wrong-concept
+  //      matches as the cost of finding lesser-known places. ----
   if (routeWikiLang && routeWikiLang !== 'en') {
-    const local = await fetchFromWiki(stop.name, routeWikiLang, stop.lat, stop.lng, maxKm);
+    const local = await fetchFromWiki(stop.name, routeWikiLang, stop.lat, stop.lng);
     if (local) return local;
   }
-  const en = await fetchFromWiki(stop.name, 'en', stop.lat, stop.lng, maxKm);
+  const en = await fetchFromWiki(stop.name, 'en', stop.lat, stop.lng);
   if (en) return en;
 
-  return null;   // nothing reliable found -> honest "no description"
+  return null;   // genuinely nothing found -> honest "no description"
 }
 
 /* =====================================================================
