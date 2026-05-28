@@ -518,10 +518,14 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
     [out:json][timeout:120];
     (
       node["historic"](${s},${w},${n},${e});
+      way["historic"](${s},${w},${n},${e});
+      node["heritage"](${s},${w},${n},${e});
+      way["heritage"](${s},${w},${n},${e});
       node["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
+      way["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
       node["natural"~"peak|waterfall|cave_entrance"](${s},${w},${n},${e});
     );
-    out body 200;
+    out center 200;
   `;
 
   // TIMEOUT 2 (client-side): fetch() has no timeout by default, so a stalled
@@ -551,7 +555,13 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
 
   for (const el of j.elements) {
     if (!el.tags || !el.tags.name) continue;            // skip unnamed clutter
-    const pt = turf.point([el.lon, el.lat]);
+
+    // Nodes have lat/lon directly; ways/relations (buildings) have their
+    // coordinate in el.center (because we used "out center"). Handle both.
+    const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    const lon = el.lon != null ? el.lon : (el.center && el.center.lon);
+    if (lat == null || lon == null) continue;           // no usable coordinate
+    const pt = turf.point([lon, lat]);
 
     // (c) is it really inside the corridor (not just the loose box)?
     if (!turf.booleanPointInPolygon(pt, corridor)) continue;
@@ -567,8 +577,8 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
     results.push({
       id: `${el.type}/${el.id}`,
       name: el.tags.name,
-      lat: el.lat, lng: el.lon,
-      kind: el.tags.historic || el.tags.tourism || el.tags.natural || 'point of interest',
+      lat: lat, lng: lon,
+      kind: el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
       alongKm: snap.properties.location,     // <-- sort key (travel order)
       detourKm: snap.properties.dist,        // <-- how far off the route
       progress: snap.properties.location / totalLen,
