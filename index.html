@@ -123,6 +123,38 @@
 
   .controls-note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
 
+  /* category filter checkboxes — compact, panel-friendly */
+  .cat-filters {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: rgba(0,0,0,0.02);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+  }
+  .cat-filters-title {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+  }
+  .cat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    padding: 4px 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  .cat input[type="checkbox"] {
+    width: 16px; height: 16px;
+    accent-color: var(--accent-2);
+    cursor: pointer;
+  }
+
   /* ---- Status / loading line ---- */
   #status {
     margin: 18px 0 4px;
@@ -268,12 +300,18 @@
         <input id="maxDetour" type="number" value="2" min="0.1" max="20" step="0.5">
       </div>
     </div>
-    <div class="row">
-      <div class="field">
-        <label>Max attractions (most notable kept)</label>
-        <input id="maxAttractions" type="number" value="200" min="5" max="500" step="5">
-      </div>
+    <!-- max-attractions input removed from UI; safety cap is still 200 in the code -->
+
+    <div class="cat-filters" id="catFilters">
+      <label class="cat-filters-title">Show categories</label>
+      <label class="cat"><input type="checkbox" data-cat="historic"    checked> Historic sites</label>
+      <label class="cat"><input type="checkbox" data-cat="heritage"    checked> Heritage</label>
+      <label class="cat"><input type="checkbox" data-cat="viewpoints"  checked> Viewpoints</label>
+      <label class="cat"><input type="checkbox" data-cat="museums"     checked> Museums &amp; art</label>
+      <label class="cat"><input type="checkbox" data-cat="attractions" checked> Other attractions</label>
+      <label class="cat"><input type="checkbox" data-cat="natural"     checked> Natural features</label>
     </div>
+
     <div class="controls-note" style="color:var(--accent);margin-top:6px">
       ⚠ A wider corridor finds more, but on a long route it can return too many
       points and the search may fail. If that happens, keep the corridor narrow,
@@ -368,7 +406,7 @@ function switchMapStyle(styleName) {
   // once the new style finishes loading, redraw routes + pins
   map.once('styledata', () => {
     if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes);
-    if (currentStops && currentStops.length) drawPins(currentStops);
+    if (currentStops && currentStops.length) applyCategoryFilter();
   });
   // update which switcher button looks active
   document.querySelectorAll('.style-btn').forEach(b =>
@@ -583,11 +621,22 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
     //      user's limit. snap.properties.dist is the straight-line detour in km.
     if (snap.properties.dist > maxDetourKm) continue;
 
+    // Classify into one of our 6 filter categories — used by the category toggles
+    // in the UI. Each attraction gets exactly one category for filtering.
+    let category;
+    if (el.tags.tourism === 'viewpoint') category = 'viewpoints';
+    else if (el.tags.tourism === 'museum' || el.tags.tourism === 'artwork') category = 'museums';
+    else if (el.tags.tourism === 'attraction') category = 'attractions';
+    else if (el.tags.natural) category = 'natural';
+    else if (el.tags.heritage && !el.tags.historic) category = 'heritage';
+    else category = 'historic';   // default — historic catches the majority
+
     results.push({
       id: `${el.type}/${el.id}`,
       name: el.tags.name,
       lat: lat, lng: lon,
       kind: el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
+      category: category,                    // <-- for filtering by checkbox
       alongKm: snap.properties.location,     // <-- sort key (travel order)
       detourKm: snap.properties.dist,        // <-- how far off the route
       progress: snap.properties.location / totalLen,
@@ -903,13 +952,16 @@ function drawPins(stops) {
   if (!mapReady || !map) return;
   document.querySelectorAll('.maplibregl-marker').forEach(m => m.remove());
   stops.forEach((s, i) => {
+    // use original scan index if present (after category filtering),
+    // otherwise the array position (when called with the full unfiltered set)
+    const num = (s._origIndex != null ? s._origIndex : i) + 1;
     const el = document.createElement('div');
     el.style.cssText = 'width:22px;height:22px;border-radius:50%;background:#2f6b4f;' +
       'color:#fff;font:700 11px sans-serif;display:grid;place-items:center;cursor:pointer;' +
       'border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)';
-    el.textContent = i + 1;
+    el.textContent = num;
     // native hover tooltip (desktop only — no-op on mobile, which is correct)
-    el.title = `${i + 1}. ${s.name}`;
+    el.title = `${num}. ${s.name}`;
     el.onclick = () => openDetail(s.id);
     new maplibregl.Marker({ element: el }).setLngLat([s.lng, s.lat]).addTo(map);
   });
@@ -920,11 +972,12 @@ function renderList(stops) {
   ul.innerHTML = '';
   $('empty').style.display = stops.length ? 'none' : 'block';
   stops.forEach((s, i) => {
+    const num = (s._origIndex != null ? s._origIndex : i) + 1;
     const li = document.createElement('li');
     li.className = 'stop';
     li.dataset.id = s.id;
     li.innerHTML = `
-      <span class="seq">${i+1}</span>
+      <span class="seq">${num}</span>
       <h3>${s.name}</h3>
       <div class="meta">${s.alongKm.toFixed(0)} km into the trip · ${(s.detourKm*1000).toFixed(0)} m off route</div>
       <span class="kind">${s.kind}</span>`;
@@ -1043,16 +1096,47 @@ async function selectRoute(idx) {
 
     const widthKm = parseFloat($('width').value) || 1;
     const maxDetourKm = parseFloat($('maxDetour').value) || 2;
-    const maxAttractions = parseInt($('maxAttractions').value) || 200;
+    const maxAttractions = 200;  // safety cap; the UI input was removed in favour of category toggles
     currentStops = await corridorScan(route.geometry, widthKm, maxDetourKm, maxAttractions);
     const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
     status(`Route ${idx + 1}: found ${currentStops.length} stops along the way${langNote}.`);
-    drawPins(currentStops);
-    renderList(currentStops);
+    applyCategoryFilter();
   } catch (e) {
     status('⚠ ' + e.message);
   }
 }
+
+/* ---------------------------------------------------------------------
+   Category filter — re-renders the list and pins based on which category
+   checkboxes are ticked. ORIGINAL NUMBERING IS PRESERVED: items keep the
+   number they got at scan time. Toggling a category off simply hides those
+   items from the list and removes their pins from the map.
+   --------------------------------------------------------------------- */
+function getActiveCategories() {
+  const boxes = document.querySelectorAll('#catFilters input[type="checkbox"]');
+  const active = new Set();
+  boxes.forEach(b => { if (b.checked) active.add(b.dataset.cat); });
+  return active;
+}
+
+function applyCategoryFilter() {
+  if (!currentStops || !currentStops.length) {
+    drawPins([]);
+    renderList([]);
+    return;
+  }
+  const active = getActiveCategories();
+  // tag each stop with its original position so list + pins keep their original numbers
+  const numbered = currentStops.map((s, i) => ({ ...s, _origIndex: i }));
+  const filtered = numbered.filter(s => active.has(s.category));
+  drawPins(filtered);
+  renderList(filtered);
+}
+
+// Wire up the checkboxes: any toggle re-runs the filter immediately
+document.querySelectorAll('#catFilters input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', applyCategoryFilter);
+});
 
 /* =====================================================================
    MAIN — fetch the alternative routes and display them. The scan no
