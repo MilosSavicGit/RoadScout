@@ -305,7 +305,7 @@
     <div class="cat-filters" id="catFilters">
       <label class="cat-filters-title">Show categories</label>
       <label class="cat"><input type="checkbox" data-cat="historic"    checked> Historic sites</label>
-      <label class="cat"><input type="checkbox" data-cat="heritage"    checked> Heritage</label>
+      <label class="cat" title="Officially-listed / protected places (UNESCO, national heritage registers, etc.)"><input type="checkbox" data-cat="heritage"    checked> Heritage-listed</label>
       <label class="cat"><input type="checkbox" data-cat="viewpoints"  checked> Viewpoints</label>
       <label class="cat"><input type="checkbox" data-cat="museums"     checked> Museums &amp; art</label>
       <label class="cat"><input type="checkbox" data-cat="attractions" checked> Other attractions</label>
@@ -621,22 +621,29 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
     //      user's limit. snap.properties.dist is the straight-line detour in km.
     if (snap.properties.dist > maxDetourKm) continue;
 
-    // Classify into one of our 6 filter categories — used by the category toggles
-    // in the UI. Each attraction gets exactly one category for filtering.
-    let category;
-    if (el.tags.tourism === 'viewpoint') category = 'viewpoints';
-    else if (el.tags.tourism === 'museum' || el.tags.tourism === 'artwork') category = 'museums';
-    else if (el.tags.tourism === 'attraction') category = 'attractions';
-    else if (el.tags.natural) category = 'natural';
-    else if (el.tags.heritage && !el.tags.historic) category = 'heritage';
-    else category = 'historic';   // default — historic catches the majority
+    // Classify into our filter categories — each attraction can belong to
+    // MULTIPLE categories at once. Most importantly: a heritage-listed historic
+    // building is BOTH 'historic' AND 'heritage' (so it shows under either
+    // toggle). Heritage as a sole tag means 'officially listed / protected' —
+    // a higher bar than just 'historic', and a meaningful separate filter.
+    const categories = [];
+    if (el.tags.tourism === 'viewpoint') categories.push('viewpoints');
+    if (el.tags.tourism === 'museum' || el.tags.tourism === 'artwork') categories.push('museums');
+    if (el.tags.tourism === 'attraction') categories.push('attractions');
+    if (el.tags.natural) categories.push('natural');
+    if (el.tags.heritage) categories.push('heritage');
+    if (el.tags.historic) categories.push('historic');
+    // fallback: if no specific category matched, put it under historic
+    // (the broadest catchall — e.g., places caught by relation queries
+    //  without obvious tags)
+    if (categories.length === 0) categories.push('historic');
 
     results.push({
       id: `${el.type}/${el.id}`,
       name: el.tags.name,
       lat: lat, lng: lon,
       kind: el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
-      category: category,                    // <-- for filtering by checkbox
+      categories: categories,                // <-- array, supports multi-category membership
       alongKm: snap.properties.location,     // <-- sort key (travel order)
       detourKm: snap.properties.dist,        // <-- how far off the route
       progress: snap.properties.location / totalLen,
@@ -1128,7 +1135,10 @@ function applyCategoryFilter() {
   const active = getActiveCategories();
   // tag each stop with its original position so list + pins keep their original numbers
   const numbered = currentStops.map((s, i) => ({ ...s, _origIndex: i }));
-  const filtered = numbered.filter(s => active.has(s.category));
+  // a stop is shown if AT LEAST ONE of its categories is currently active
+  // (places with multiple categories — e.g. heritage-listed historic buildings —
+  //  appear when EITHER toggle is on, and hide only when ALL their categories are off)
+  const filtered = numbered.filter(s => s.categories.some(c => active.has(c)));
   drawPins(filtered);
   renderList(filtered);
 }
