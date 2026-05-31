@@ -526,8 +526,10 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
     (
       node["historic"](${s},${w},${n},${e});
       way["historic"](${s},${w},${n},${e});
+      relation["historic"](${s},${w},${n},${e});
       node["heritage"](${s},${w},${n},${e});
       way["heritage"](${s},${w},${n},${e});
+      relation["heritage"](${s},${w},${n},${e});
       node["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
       way["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
       node["natural"~"peak|waterfall|cave_entrance"](${s},${w},${n},${e});
@@ -906,6 +908,8 @@ function drawPins(stops) {
       'color:#fff;font:700 11px sans-serif;display:grid;place-items:center;cursor:pointer;' +
       'border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)';
     el.textContent = i + 1;
+    // native hover tooltip (desktop only — no-op on mobile, which is correct)
+    el.title = `${i + 1}. ${s.name}`;
     el.onclick = () => openDetail(s.id);
     new maplibregl.Marker({ element: el }).setLngLat([s.lng, s.lat]).addTo(map);
   });
