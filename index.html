@@ -580,6 +580,11 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
       way["heritage"](${s},${w},${n},${e});
       relation["heritage"](${s},${w},${n},${e});
       relation["boundary"="protected_area"](${s},${w},${n},${e});
+      // notable parks — only those with a Wikipedia article (filters out
+      // playgrounds and regular city parks; catches culturally significant
+      // ones like Kalemegdan, Central Park, Hyde Park, etc.)
+      way["leisure"="park"]["wikipedia"](${s},${w},${n},${e});
+      relation["leisure"="park"]["wikipedia"](${s},${w},${n},${e});
       node["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
       way["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
       node["natural"~"peak|waterfall|cave_entrance"](${s},${w},${n},${e});
