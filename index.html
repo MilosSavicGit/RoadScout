@@ -403,11 +403,22 @@ function switchMapStyle(styleName) {
   if (!mapReady || !map || !MAP_STYLES[styleName]) return;
   currentStyle = styleName;
   map.setStyle(MAP_STYLES[styleName]);
-  // once the new style finishes loading, redraw routes + pins
-  map.once('styledata', () => {
-    if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes);
-    if (currentStops && currentStops.length) applyCategoryFilter();
-  });
+
+  // Wait for the new style to be fully loaded before redrawing.
+  // `styledata` fires multiple times during a swap (and the first firing
+  // is before the style is actually usable for addLayer); `load` only fires
+  // once at initial map creation. The reliable pattern is to poll
+  // map.isStyleLoaded() until it returns true.
+  const waitForStyle = () => {
+    if (map.isStyleLoaded()) {
+      if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes, true);
+      if (currentStops && currentStops.length) applyCategoryFilter();
+    } else {
+      setTimeout(waitForStyle, 50);
+    }
+  };
+  waitForStyle();
+
   // update which switcher button looks active
   document.querySelectorAll('.style-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.style === styleName));
@@ -907,13 +918,15 @@ async function getTally(poiId) {
 /* Draw ALL alternative routes, each in its own colour. Clicking a route
    (on the map) selects it and triggers the scan. The selected route is
    drawn bold/opaque; the others are dimmed so the choice is clear. */
-function drawRoutes(routes) {
+function drawRoutes(routes, isRedraw) {
   if (!mapReady || !map) return;
 
   // MapLibre can't add layers until the style has loaded. If we're called
-  // too early (user scanned the instant the page opened), wait and retry.
+  // too early (user scanned the instant the page opened, OR right after a
+  // style swap), poll until the style is ready. Using `map.once('load', ...)`
+  // would fail because `load` only fires once per map instance, not per style.
   if (!map.isStyleLoaded()) {
-    map.once('load', () => drawRoutes(routes));
+    setTimeout(() => drawRoutes(routes, isRedraw), 50);
     return;
   }
 
@@ -927,6 +940,10 @@ function drawRoutes(routes) {
   routes.forEach((route, i) => {
     const selected = (i === selectedRouteIdx);
     map.addSource('route-' + i, { type: 'geojson', data: route.geometry });
+
+    // Layers are added AFTER all existing style layers, which means they
+    // render on top — exactly what we want, so the route is always visible
+    // above base-map streets/labels regardless of which style is active.
 
     // a fat invisible "hit" line on top makes routes easy to click
     map.addLayer({
@@ -949,9 +966,13 @@ function drawRoutes(routes) {
     map.on('mouseleave', 'route-hit-' + i, () => map.getCanvas().style.cursor = '');
   });
 
-  // fit map to the first route's bounds
-  const [w, s, e, n] = turf.bbox(routes[0].geometry);
-  map.fitBounds([[w, s], [e, n]], { padding: 50 });
+  // Fit the map to the first route's bounds — but ONLY on the initial draw
+  // for a NEW search. On a style-switch redraw (isRedraw=true) we keep the
+  // user's current view; reframing on every basemap swap would be jarring.
+  if (!isRedraw) {
+    const [w, s, e, n] = turf.bbox(routes[0].geometry);
+    map.fitBounds([[w, s], [e, n]], { padding: 50 });
+  }
 }
 
 /* Draw the numbered POI pins for the currently scanned route. */
