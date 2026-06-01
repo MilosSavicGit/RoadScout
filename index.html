@@ -310,6 +310,7 @@
       <label class="cat"><input type="checkbox" data-cat="museums"     checked> Museums &amp; art</label>
       <label class="cat"><input type="checkbox" data-cat="attractions" checked> Other attractions</label>
       <label class="cat"><input type="checkbox" data-cat="natural"     checked> Natural features</label>
+      <label class="cat" title="Notable parks — large urban or historic parks linked to a Wikipedia article"><input type="checkbox" data-cat="parks"       checked> Parks</label>
     </div>
 
     <div class="controls-note" style="color:var(--accent);margin-top:6px">
@@ -646,6 +647,7 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
     if (el.tags.tourism === 'museum' || el.tags.tourism === 'artwork') categories.push('museums');
     if (el.tags.tourism === 'attraction') categories.push('attractions');
     if (el.tags.natural) categories.push('natural');
+    if (el.tags.leisure === 'park') categories.push('parks');
     if (el.tags.boundary === 'protected_area') categories.push('protected');
     if (el.tags.heritage) categories.push('protected');  // heritage-listed places are conceptually protected too
     if (el.tags.historic) categories.push('historic');
