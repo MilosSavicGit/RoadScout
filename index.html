@@ -305,7 +305,7 @@
     <div class="cat-filters" id="catFilters">
       <label class="cat-filters-title">Show categories</label>
       <label class="cat"><input type="checkbox" data-cat="historic"    checked> Historic sites</label>
-      <label class="cat" title="Officially-listed / protected places (UNESCO, national heritage registers, etc.)"><input type="checkbox" data-cat="heritage"    checked> Heritage-listed</label>
+      <label class="cat" title="Officially protected zones — historic districts, heritage-listed sites, and national/nature parks"><input type="checkbox" data-cat="protected"    checked> Protected areas</label>
       <label class="cat"><input type="checkbox" data-cat="viewpoints"  checked> Viewpoints</label>
       <label class="cat"><input type="checkbox" data-cat="museums"     checked> Museums &amp; art</label>
       <label class="cat"><input type="checkbox" data-cat="attractions" checked> Other attractions</label>
@@ -579,6 +579,7 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
       node["heritage"](${s},${w},${n},${e});
       way["heritage"](${s},${w},${n},${e});
       relation["heritage"](${s},${w},${n},${e});
+      relation["boundary"="protected_area"](${s},${w},${n},${e});
       node["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
       way["tourism"~"viewpoint|museum|attraction|artwork"](${s},${w},${n},${e});
       node["natural"~"peak|waterfall|cave_entrance"](${s},${w},${n},${e});
@@ -633,16 +634,15 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, maxAttractions) {
     if (snap.properties.dist > maxDetourKm) continue;
 
     // Classify into our filter categories — each attraction can belong to
-    // MULTIPLE categories at once. Most importantly: a heritage-listed historic
-    // building is BOTH 'historic' AND 'heritage' (so it shows under either
-    // toggle). Heritage as a sole tag means 'officially listed / protected' —
-    // a higher bar than just 'historic', and a meaningful separate filter.
+    // MULTIPLE categories at once. A protected zone that's also historic gets
+    // both tags; the user sees it under either toggle.
     const categories = [];
     if (el.tags.tourism === 'viewpoint') categories.push('viewpoints');
     if (el.tags.tourism === 'museum' || el.tags.tourism === 'artwork') categories.push('museums');
     if (el.tags.tourism === 'attraction') categories.push('attractions');
     if (el.tags.natural) categories.push('natural');
-    if (el.tags.heritage) categories.push('heritage');
+    if (el.tags.boundary === 'protected_area') categories.push('protected');
+    if (el.tags.heritage) categories.push('protected');  // heritage-listed places are conceptually protected too
     if (el.tags.historic) categories.push('historic');
     // fallback: if no specific category matched, put it under historic
     // (the broadest catchall — e.g., places caught by relation queries
