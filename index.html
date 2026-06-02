@@ -219,6 +219,8 @@
   .tally b { color: var(--ink); }
 
   #map { width: 100%; height: 100%; }
+  .maplibregl-marker { z-index: 40; }
+  .roadscout-pin { pointer-events: auto; }
 
   /* Map style switcher (Streets / Outdoor / Satellite) */
   #styleSwitcher {
@@ -986,26 +988,33 @@ function clearPins() {
 
 /* Draw the numbered POI pins for the currently visible categories. */
 function drawPins(stops) {
-  if (!mapReady || !map) return;
-
-  // If MapLibre is still initializing or has just switched style, wait and try again.
-  if (!map.loaded()) {
-    map.once('load', () => drawPins(stops));
-    return;
-  }
+  if (!mapReady || !map || typeof maplibregl === 'undefined') return;
 
   clearPins();
+
+  // Markers are DOM elements, so they do NOT need to wait for map style layers.
+  // The previous version waited on map.loaded(); after the first load event had
+  // already passed, that could leave pins waiting forever. Add them immediately.
   stops.forEach((s, i) => {
-    const el = document.createElement('div');
+    if (s.lng == null || s.lat == null) return;
+
+    const el = document.createElement('button');
+    el.type = 'button';
     el.className = 'roadscout-pin';
-    el.style.cssText = 'width:24px;height:24px;border-radius:50%;background:#2f6b4f;' +
-      'color:#fff;font:700 11px sans-serif;display:grid;place-items:center;cursor:pointer;' +
-      'border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);z-index:50';
+    el.style.cssText = 'width:26px;height:26px;border-radius:50%;background:#2f6b4f;' +
+      'color:#fff;font:700 12px Arial,sans-serif;display:grid;place-items:center;cursor:pointer;' +
+      'border:2px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);z-index:9999;padding:0;' +
+      'line-height:1;appearance:none;-webkit-appearance:none';
     el.textContent = s.displayNum || (i + 1);
     el.title = `${s.displayNum || (i + 1)}. ${s.name}`;
-    el.onclick = () => openDetail(s.id);
+    el.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openDetail(s.id);
+    });
+
     const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-      .setLngLat([s.lng, s.lat])
+      .setLngLat([Number(s.lng), Number(s.lat)])
       .addTo(map);
     currentMarkers.push(marker);
   });
