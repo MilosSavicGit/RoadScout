@@ -408,7 +408,7 @@ function switchMapStyle(styleName) {
   // once the new style finishes loading, redraw routes + pins
   map.once('styledata', () => {
     if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes);
-    if (currentStops && currentStops.length) drawPins(currentStops);
+    renderVisibleStops();
   });
   // update which switcher button looks active
   document.querySelectorAll('.style-btn').forEach(b =>
@@ -421,6 +421,7 @@ let activeStopId = null;
 let currentRoutes = [];         // all alternative routes from OSRM
 let selectedRouteIdx = null;    // which route the user clicked to scan
 let routeWikiLang = null;       // local Wikipedia language for this route (e.g. 'de','sr')
+let currentMarkers = [];        // numbered map pins, kept so we can reliably remove/redraw them
 
 /* =====================================================================
    SUPABASE — persistent, shared community verdicts
@@ -971,20 +972,42 @@ function drawRoutes(routes) {
   map.fitBounds([[w, s], [e, n]], { padding: 50 });
 }
 
-/* Draw the numbered POI pins for the currently scanned route. */
+/* Return only the categories currently switched on. The original displayNum
+   stays fixed, so hiding categories leaves gaps rather than renumbering. */
+function getVisibleStops() {
+  const selected = new Set(getSelectedCategories());
+  return currentStops.filter(s => selected.has(s.category));
+}
+
+function clearPins() {
+  currentMarkers.forEach(m => m.remove());
+  currentMarkers = [];
+}
+
+/* Draw the numbered POI pins for the currently visible categories. */
 function drawPins(stops) {
   if (!mapReady || !map) return;
-  document.querySelectorAll('.maplibregl-marker').forEach(m => m.remove());
+
+  // If MapLibre is still initializing or has just switched style, wait and try again.
+  if (!map.loaded()) {
+    map.once('load', () => drawPins(stops));
+    return;
+  }
+
+  clearPins();
   stops.forEach((s, i) => {
     const el = document.createElement('div');
-    el.style.cssText = 'width:22px;height:22px;border-radius:50%;background:#2f6b4f;' +
+    el.className = 'roadscout-pin';
+    el.style.cssText = 'width:24px;height:24px;border-radius:50%;background:#2f6b4f;' +
       'color:#fff;font:700 11px sans-serif;display:grid;place-items:center;cursor:pointer;' +
-      'border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)';
+      'border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);z-index:50';
     el.textContent = s.displayNum || (i + 1);
-    // native hover tooltip (desktop only — no-op on mobile, which is correct)
     el.title = `${s.displayNum || (i + 1)}. ${s.name}`;
     el.onclick = () => openDetail(s.id);
-    new maplibregl.Marker({ element: el }).setLngLat([s.lng, s.lat]).addTo(map);
+    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([s.lng, s.lat])
+      .addTo(map);
+    currentMarkers.push(marker);
   });
 }
 
@@ -1004,6 +1027,17 @@ function renderList(stops) {
     li.onclick = () => openDetail(s.id);
     ul.appendChild(li);
   });
+}
+
+function renderVisibleStops() {
+  const visible = getVisibleStops();
+  drawPins(visible);
+  renderList(visible);
+  if (currentStops.length) {
+    const hidden = currentStops.length - visible.length;
+    const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
+    status(`Showing ${visible.length} of ${currentStops.length} stops${hidden ? ` (${hidden} hidden by category switches)` : ''}${langNote}.`);
+  }
 }
 
 async function openDetail(poiId) {
@@ -1089,6 +1123,13 @@ document.querySelectorAll('.style-btn').forEach(btn => {
   btn.onclick = () => switchMapStyle(btn.dataset.style);
 });
 
+/* Category switches hide/show already-found stops without renumbering them. */
+document.querySelectorAll('.cat').forEach(cb => {
+  cb.addEventListener('change', () => {
+    if (currentStops && currentStops.length) renderVisibleStops();
+  });
+});
+
 /* =====================================================================
    selectRoute — called when the user clicks one of the coloured routes.
    It highlights that route and scans ONLY it for cultural attractions.
@@ -1103,6 +1144,7 @@ async function selectRoute(idx) {
   const km = (route.distance / 1000).toFixed(0);
   status(`Scanning route ${idx + 1} (${km} km) for cultural attractions…`);
   $('stops').innerHTML = '';
+  clearPins();
   $('detail').classList.remove('open');
 
   try {
@@ -1120,8 +1162,7 @@ async function selectRoute(idx) {
     currentStops = await corridorScan(route.geometry, widthKm, maxDetourKm, selectedCategories);
     const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
     status(`Route ${idx + 1}: found ${currentStops.length} stops along the way${langNote}.`);
-    drawPins(currentStops);
-    renderList(currentStops);
+    renderVisibleStops();
   } catch (e) {
     status('⚠ ' + e.message);
   }
@@ -1141,6 +1182,7 @@ $('go').onclick = async () => {
   $('stops').innerHTML = '';
   selectedRouteIdx = null;
   currentStops = [];
+  clearPins();
   routeWikiLang = null;   // reset; will be re-detected for the chosen route
   try {
     status('Finding start and destination…');
