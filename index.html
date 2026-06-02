@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RoadScout — nearby search version</title>
+<title>RoadScout — v7 analytics</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -311,7 +311,7 @@
   <div class="panel">
     <header>
       <h1>RoadScout</h1>
-      <div class="tag">nearby 3 km search or Los Angeles → Santa Monica route</div>
+      <div class="tag">nearby 3 km search or Los Angeles → Santa Monica route · v7 analytics</div>
     </header>
 
     <div class="location-panel" id="locationPanel">
@@ -569,6 +569,24 @@ function getUserToken() {
   return t;
 }
 const USER_TOKEN = getUserToken();
+const APP_VERSION = 'v7_analytics';
+
+// Tiny, privacy-light traffic counter. It sends anonymous events to Supabase.
+// We do NOT store GPS coordinates here. Only event type, mode, version, and small counts.
+async function trackEvent(eventType, mode = null, details = {}) {
+  if (!supaReady || !supa) return;
+  try {
+    await supa.from('roadscout_events').insert({
+      user_token: USER_TOKEN,
+      event_type: eventType,
+      app_version: APP_VERSION,
+      mode: mode,
+      details: details
+    });
+  } catch (e) {
+    console.log('trackEvent failed:', e);
+  }
+}
 
 // Cache of tallies keyed by place_id, populated by getTally on demand.
 // We don't fetch every place's tally up-front; we fetch on detail open.
@@ -1320,6 +1338,10 @@ function renderVisibleStops() {
 async function openDetail(poiId) {
   activeStopId = poiId;
   const s = currentStops.find(x => x.id === poiId);
+  trackEvent('attraction_open', s && s.nearbyMode ? 'near_me' : 'route', {
+    category: s ? s.category : null,
+    kind: s ? s.kind : null
+  });
   const num = s.displayNum || (currentStops.findIndex(x => x.id === poiId) + 1);  // permanent route-order number
   document.querySelectorAll('.stop').forEach(el =>
     el.classList.toggle('active', el.dataset.id === poiId));
@@ -1459,6 +1481,13 @@ async function showRoutesFromInputs() {
   }
   const btn = $('go');
   btn.disabled = true;
+  trackEvent('route_search', 'route', {
+    from: $('from') ? $('from').value : null,
+    to: $('to') ? $('to').value : null,
+    width_km: $('width') ? $('width').value : null,
+    max_detour_km: $('maxDetour') ? $('maxDetour').value : null,
+    categories: getSelectedCategories ? getSelectedCategories() : []
+  });
   $('stops').innerHTML = '';
   selectedRouteIdx = null;
   currentStops = [];
@@ -1502,6 +1531,10 @@ async function scanNearLocation(lat, lng) {
   }
   const btn = $('go');
   btn.disabled = true;
+  trackEvent('near_me_search', 'near_me', {
+    radius_km: 3,
+    categories: getSelectedCategories ? getSelectedCategories() : []
+  });
   $('stops').innerHTML = '';
   $('detail').classList.remove('open');
   currentStops = [];
@@ -1554,6 +1587,9 @@ function drawSelectedMode() {
 $('go').onclick = drawSelectedMode;
 
 window.addEventListener('load', () => {
+  trackEvent('app_open', 'startup', {
+    user_agent: navigator.userAgent ? navigator.userAgent.slice(0, 120) : null
+  });
   // Start with the visible default route. If the user turns on the location checkbox,
   // Show Attractions will switch to the 3 km nearby search.
   setTimeout(() => showRoutesFromInputs(), 500);
