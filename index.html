@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RoadScout — v7 analytics</title>
+<title>RoadScout — nearby search version</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -311,7 +311,7 @@
   <div class="panel">
     <header>
       <h1>RoadScout</h1>
-      <div class="tag">nearby 3 km search or Los Angeles → Santa Monica route · v7 analytics</div>
+      <div class="tag">nearby 3 km search or Los Angeles → Santa Monica route</div>
     </header>
 
     <div class="location-panel" id="locationPanel">
@@ -569,22 +569,23 @@ function getUserToken() {
   return t;
 }
 const USER_TOKEN = getUserToken();
-const APP_VERSION = 'v7_analytics';
+const APP_VERSION = 'v8_analytics_safe';
 
-// Tiny, privacy-light traffic counter. It sends anonymous events to Supabase.
-// We do NOT store GPS coordinates here. Only event type, mode, version, and small counts.
-async function trackEvent(eventType, mode = null, details = {}) {
-  if (!supaReady || !supa) return;
+// Tiny traffic counter. Fire-and-forget only: analytics must NEVER stop the map.
+function trackEvent(eventType, mode = null, details = {}) {
   try {
-    await supa.from('roadscout_events').insert({
+    if (!supaReady || !supa) return;
+    supa.from('roadscout_events').insert({
       user_token: USER_TOKEN,
       event_type: eventType,
       app_version: APP_VERSION,
       mode: mode,
-      details: details
-    });
+      details: details || {}
+    }).then(({ error }) => {
+      if (error) console.log('analytics insert error:', error.message);
+    }).catch(e => console.log('analytics failed:', e));
   } catch (e) {
-    console.log('trackEvent failed:', e);
+    console.log('analytics skipped:', e);
   }
 }
 
@@ -1338,10 +1339,8 @@ function renderVisibleStops() {
 async function openDetail(poiId) {
   activeStopId = poiId;
   const s = currentStops.find(x => x.id === poiId);
-  trackEvent('attraction_open', s && s.nearbyMode ? 'near_me' : 'route', {
-    category: s ? s.category : null,
-    kind: s ? s.kind : null
-  });
+  if (!s) return;
+  trackEvent('attraction_open', s.nearbyMode ? 'near_me' : 'route', { category: s.category, kind: s.kind });
   const num = s.displayNum || (currentStops.findIndex(x => x.id === poiId) + 1);  // permanent route-order number
   document.querySelectorAll('.stop').forEach(el =>
     el.classList.toggle('active', el.dataset.id === poiId));
@@ -1462,6 +1461,14 @@ async function selectRoute(idx) {
     const maxDetourKm = parseFloat($('maxDetour').value) || 2;
     const selectedCategories = getSelectedCategories();
     currentStops = await corridorScan(route.geometry, widthKm, maxDetourKm, selectedCategories);
+    trackEvent('route_search', 'route', {
+      from: $('from') ? $('from').value : null,
+      to: $('to') ? $('to').value : null,
+      width_km: widthKm,
+      max_detour_km: maxDetourKm,
+      categories: selectedCategories,
+      results: currentStops.length
+    });
     const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
     status(`Route ${idx + 1}: found ${currentStops.length} stops along the way${langNote}.`);
     renderVisibleStops();
@@ -1481,13 +1488,6 @@ async function showRoutesFromInputs() {
   }
   const btn = $('go');
   btn.disabled = true;
-  trackEvent('route_search', 'route', {
-    from: $('from') ? $('from').value : null,
-    to: $('to') ? $('to').value : null,
-    width_km: $('width') ? $('width').value : null,
-    max_detour_km: $('maxDetour') ? $('maxDetour').value : null,
-    categories: getSelectedCategories ? getSelectedCategories() : []
-  });
   $('stops').innerHTML = '';
   selectedRouteIdx = null;
   currentStops = [];
@@ -1531,10 +1531,6 @@ async function scanNearLocation(lat, lng) {
   }
   const btn = $('go');
   btn.disabled = true;
-  trackEvent('near_me_search', 'near_me', {
-    radius_km: 3,
-    categories: getSelectedCategories ? getSelectedCategories() : []
-  });
   $('stops').innerHTML = '';
   $('detail').classList.remove('open');
   currentStops = [];
@@ -1550,6 +1546,11 @@ async function scanNearLocation(lat, lng) {
     const result = await circleScan(lng, lat, 3, selectedCategories);
     currentCircle = result.circle;
     currentStops = result.stops;
+    trackEvent('near_me_search', 'near_me', {
+      radius_km: 3,
+      categories: selectedCategories,
+      results: currentStops.length
+    });
     drawSearchCircle(currentCircle);
     renderVisibleStops();
     const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
@@ -1587,9 +1588,7 @@ function drawSelectedMode() {
 $('go').onclick = drawSelectedMode;
 
 window.addEventListener('load', () => {
-  trackEvent('app_open', 'startup', {
-    user_agent: navigator.userAgent ? navigator.userAgent.slice(0, 120) : null
-  });
+  trackEvent('app_open', 'startup', {});
   // Start with the visible default route. If the user turns on the location checkbox,
   // Show Attractions will switch to the 3 km nearby search.
   setTimeout(() => showRoutesFromInputs(), 500);
