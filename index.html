@@ -311,15 +311,14 @@
   <div class="panel">
     <header>
       <h1>RoadScout</h1>
-      <div class="tag">nearby 3 km search + Los Angeles → Santa Monica fallback</div>
+      <div class="tag">nearby 3 km search or Los Angeles → Santa Monica route</div>
     </header>
 
     <div class="location-panel" id="locationPanel">
-      <div class="location-title">Where should RoadScout draw the map?</div>
-      <div class="location-copy">Choose one mode, then press Show Attractions. “Use my location” will ask the browser for permission and draw a 3 km circle around you.</div>
+      <div class="location-title">Explore</div>
+      <div class="location-copy">Leave this off to use the default Los Angeles → Santa Monica route. Turn it on to ask for your location and draw a 3 km circle around you.</div>
       <div class="mode-choice">
-        <label><input type="radio" name="mapMode" value="nearby"> Use my location — 3 km circle</label>
-        <label><input type="radio" name="mapMode" value="route" checked> Use default route — Los Angeles → Santa Monica</label>
+        <label><input type="checkbox" id="useLocationToggle"> Use my location — 3 km circle</label>
       </div>
     </div>
 
@@ -1515,33 +1514,33 @@ async function scanNearLocation(lat, lng) {
 }
 
 function useMyLocation() {
-  const nearbyChoice = document.querySelector('input[name="mapMode"][value="nearby"]');
-  if (nearbyChoice) nearbyChoice.checked = true;
+  const useLocationToggle = $('useLocationToggle');
+  if (useLocationToggle) useLocationToggle.checked = true;
   if (!navigator.geolocation) {
-    status('⚠ This browser does not support location. Switch to default route to show Los Angeles → Santa Monica.');
+    status('⚠ This browser does not support location. Turn off “Use my location” to show Los Angeles → Santa Monica.');
     return;
   }
   status('Waiting for location permission…');
   navigator.geolocation.getCurrentPosition(
     pos => scanNearLocation(pos.coords.latitude, pos.coords.longitude),
     err => {
-      status('Location was not allowed. Your choice stays on location mode. Switch to default route if you want Los Angeles → Santa Monica.');
+      status('Location was not allowed. Turn off “Use my location” and press Show Attractions to use Los Angeles → Santa Monica.');
     },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
   );
 }
 
 function drawSelectedMode() {
-  const chosen = document.querySelector('input[name="mapMode"]:checked')?.value || 'route';
-  if (chosen === 'nearby') useMyLocation();
+  const useLocation = $('useLocationToggle')?.checked;
+  if (useLocation) useMyLocation();
   else showRoutesFromInputs();
 }
 
 $('go').onclick = drawSelectedMode;
 
 window.addEventListener('load', () => {
-  // Start with the visible default route, not Belgrade/Novi Sad.
-  // The user can switch the side-panel toggle to “Use my location” at any time.
+  // Start with the visible default route. If the user turns on the location checkbox,
+  // Show Attractions will switch to the 3 km nearby search.
   setTimeout(() => showRoutesFromInputs(), 500);
 });
 </script>
