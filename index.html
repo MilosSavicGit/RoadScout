@@ -403,15 +403,44 @@ const turfReady = (typeof turf !== 'undefined');
 /* ---------- Map style switcher ----------
    Switching MapLibre's style WIPES any layers/sources we added (routes, pins),
    so after the new style loads we re-draw whatever's currently on screen. */
+function whenMapStyleReady(fn) {
+  if (!mapReady || !map) return;
+
+  // map.isStyleLoaded() is the safest quick check. After setStyle(), the old
+  // global "load" event often will NOT fire again, so wait for style.load/idle.
+  if (map.isStyleLoaded()) {
+    fn();
+    return;
+  }
+
+  let done = false;
+  const runOnce = () => {
+    if (done) return;
+    if (!map.isStyleLoaded()) return;
+    done = true;
+    fn();
+  };
+
+  map.once('style.load', runOnce);
+  map.once('idle', runOnce);
+}
+
+function redrawMapContent() {
+  if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes, { fit: false });
+  renderVisibleStops();
+}
+
 function switchMapStyle(styleName) {
   if (!mapReady || !map || !MAP_STYLES[styleName]) return;
   currentStyle = styleName;
+
+  // Remove DOM markers before changing the basemap. They are separate from
+  // style layers, but clearing them avoids ghost/duplicate pins while switching.
+  clearPins();
+
   map.setStyle(MAP_STYLES[styleName]);
-  // once the new style finishes loading, redraw routes + pins
-  map.once('styledata', () => {
-    if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes);
-    renderVisibleStops();
-  });
+  whenMapStyleReady(redrawMapContent);
+
   // update which switcher button looks active
   document.querySelectorAll('.style-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.style === styleName));
@@ -927,13 +956,14 @@ async function getTally(poiId) {
 /* Draw ALL alternative routes, each in its own colour. Clicking a route
    (on the map) selects it and triggers the scan. The selected route is
    drawn bold/opaque; the others are dimmed so the choice is clear. */
-function drawRoutes(routes) {
+function drawRoutes(routes, options = {}) {
   if (!mapReady || !map) return;
 
-  // MapLibre can't add layers until the style has loaded. If we're called
-  // too early (user scanned the instant the page opened), wait and retry.
+  // MapLibre cannot add custom layers until the CURRENT style has loaded.
+  // The map "load" event only fires once in the map lifetime; after Streets /
+  // Outdoor / Satellite switching we must wait for style.load/idle instead.
   if (!map.isStyleLoaded()) {
-    map.once('load', () => drawRoutes(routes));
+    whenMapStyleReady(() => drawRoutes(routes, options));
     return;
   }
 
@@ -969,10 +999,14 @@ function drawRoutes(routes) {
     map.on('mouseleave', 'route-hit-' + i, () => map.getCanvas().style.cursor = '');
   });
 
-  // fit map to the first route's bounds
-  const [w, s, e, n] = turf.bbox(routes[0].geometry);
-  map.fitBounds([[w, s], [e, n]], { padding: 50 });
+  // Fit to bounds only after new route search / route selection. Do not zoom-jump
+  // when the user is simply changing Streets / Outdoor / Satellite.
+  if (options.fit !== false && routes[0] && typeof turf !== 'undefined') {
+    const [w, s, e, n] = turf.bbox(routes[0].geometry);
+    map.fitBounds([[w, s], [e, n]], { padding: 50 });
+  }
 }
+
 
 /* Return only the categories currently switched on. The original displayNum
    stays fixed, so hiding categories leaves gaps rather than renumbering. */
