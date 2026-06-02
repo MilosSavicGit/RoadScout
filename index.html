@@ -352,7 +352,7 @@
         <label><input type="checkbox" class="cat" value="attraction" checked> Attractions</label>
         <label><input type="checkbox" class="cat" value="artwork" checked> Public art</label>
         <label><input type="checkbox" class="cat" value="university" checked> Universities</label>
-        <label><input type="checkbox" class="cat" value="leisure_park" checked> Leisure parks</label>
+        <label><input type="checkbox" class="cat" value="leisure_park" checked> Parks &amp; nature</label>
         <label><input type="checkbox" class="cat" value="peak" checked> Peaks</label>
         <label><input type="checkbox" class="cat" value="waterfall" checked> Waterfalls</label>
         <label><input type="checkbox" class="cat" value="cave" checked> Caves</label>
@@ -588,7 +588,7 @@ const CATEGORY_LABELS = {
   attraction: 'Attraction',
   artwork: 'Public art',
   university: 'University',
-  leisure_park: 'Leisure park',
+  leisure_park: 'Parks & nature',
   peak: 'Peak',
   waterfall: 'Waterfall',
   cave: 'Cave'
@@ -608,7 +608,12 @@ function overpassLinesForCategory(cat, s, w, n, e) {
   if (cat === 'attraction') return line('["tourism"="attraction"]');
   if (cat === 'artwork') return line('["tourism"="artwork"]');
   if (cat === 'university') return line('["amenity"="university"]');
-  if (cat === 'leisure_park') return line('["leisure"="park"]') + '\n' + line('["tourism"="theme_park"]');
+  if (cat === 'leisure_park') return [
+    line('["leisure"~"park|garden|nature_reserve|recreation_ground"]'),
+    line('["tourism"="theme_park"]'),
+    line('["boundary"="protected_area"]'),
+    line('["landuse"="recreation_ground"]')
+  ].join('\n');
   if (cat === 'peak') return line('["natural"="peak"]');
   if (cat === 'waterfall') return line('["natural"="waterfall"]');
   if (cat === 'cave') return line('["natural"="cave_entrance"]');
@@ -623,7 +628,12 @@ function categoryForTags(tags) {
   if (tags.tourism === 'attraction') return 'attraction';
   if (tags.tourism === 'artwork') return 'artwork';
   if (tags.amenity === 'university') return 'university';
-  if (tags.leisure === 'park' || tags.tourism === 'theme_park') return 'leisure_park';
+  if (
+    ['park','garden','nature_reserve','recreation_ground'].includes(tags.leisure) ||
+    tags.tourism === 'theme_park' ||
+    tags.boundary === 'protected_area' ||
+    tags.landuse === 'recreation_ground'
+  ) return 'leisure_park';
   if (tags.natural === 'peak') return 'peak';
   if (tags.natural === 'waterfall') return 'waterfall';
   if (tags.natural === 'cave_entrance') return 'cave';
