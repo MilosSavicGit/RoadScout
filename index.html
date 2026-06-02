@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RoadScout — find the stops worth making</title>
+<title>RoadScout — nearby search version</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -267,6 +267,39 @@
   }
   .category-grid input { accent-color: var(--accent); }
 
+
+  .location-panel {
+    border: 1px solid var(--accent-2);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 0 0 16px;
+    background: rgba(47,107,79,.08);
+  }
+  .location-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--accent-2);
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+  .location-copy { font-size: 13px; color: var(--muted); line-height: 1.45; margin-bottom: 10px; }
+
+  .mode-choice {
+    display: grid; gap: 8px; margin: 10px 0 12px; font-size: 14px;
+  }
+  .mode-choice label {
+    display: flex; gap: 8px; align-items: flex-start; line-height: 1.35;
+    padding: 8px; border: 1px solid rgba(47,107,79,.25); border-radius: 6px;
+    background: rgba(255,255,255,.55);
+  }
+  .mode-choice input { margin-top: 2px; }
+  .near-btn {
+    width: 100%; padding: 10px 12px; font: inherit; font-size: 14px; font-weight: 700;
+    color: #fff; background: var(--accent-2); border: none; border-radius: 7px; cursor: pointer;
+  }
+  .near-btn:hover { filter: brightness(1.06); }
+
   .empty { color: var(--muted); font-style: italic; margin-top: 20px; font-size: 14px; }
 </style>
 </head>
@@ -278,17 +311,27 @@
   <div class="panel">
     <header>
       <h1>RoadScout</h1>
-      <div class="tag">the stops worth making, in the order you'll reach them</div>
+      <div class="tag">nearby 3 km search + Los Angeles → Santa Monica fallback</div>
     </header>
+
+    <div class="location-panel" id="locationPanel">
+      <div class="location-title">Where should RoadScout draw the map?</div>
+      <div class="location-copy">Choose one mode, then press the draw button. “Use my location” will ask the browser for permission and draw a 3 km circle around you.</div>
+      <div class="mode-choice">
+        <label><input type="radio" name="mapMode" value="nearby"> Use my location — 3 km circle</label>
+        <label><input type="radio" name="mapMode" value="route" checked> Use default route — Los Angeles → Santa Monica</label>
+      </div>
+      <button class="near-btn" id="drawSelectedMode">Draw selected map</button>
+    </div>
 
     <!-- Route input. We accept "lat,lng" OR a place name (geocoded). -->
     <div class="field">
       <label>From</label>
-      <input id="from" placeholder="e.g. Belgrade  or  44.8125,20.4612" value="Belgrade, Serbia">
+      <input id="from" placeholder="e.g. Los Angeles, CA  or  34.0522,-118.2437" value="Los Angeles, CA">
     </div>
     <div class="field">
       <label>To</label>
-      <input id="to" placeholder="e.g. Novi Sad  or  45.2671,19.8335" value="Novi Sad, Serbia">
+      <input id="to" placeholder="e.g. Santa Monica, CA  or  34.0195,-118.4912" value="Santa Monica, CA">
     </div>
     <div class="row">
       <div class="field">
@@ -323,14 +366,15 @@
     </div>
 
     <button class="go" id="go">Show routes</button>
+    <button class="go" id="nearMe" style="background:var(--accent-2)">Ask for my location — 3 km circle</button>
     <div class="controls-note">
       Uses free public services: OSRM for the route, OpenStreetMap (Overpass)
-      for points of interest, Wikipedia for descriptions. No keys, no accounts.
+      for points of interest, Wikipedia for descriptions. Uses public APIs plus the map/database keys already inside this prototype.
     </div>
 
     <div id="status"></div>
     <ul class="stops" id="stops"></ul>
-    <div class="empty" id="empty">Enter a start and destination, then show routes — and click one to scan it.</div>
+    <div class="empty" id="empty">Allow location for a 3 km nearby scan, or use the default Los Angeles → Santa Monica route.</div>
   </div>
 
   <!-- ===================== detail overlay ===================== -->
@@ -387,8 +431,8 @@ if (mapReady) {
   map = new maplibregl.Map({
     container: 'map',
     style: MAP_STYLES[currentStyle],
-    center: [20.45, 44.9],
-    zoom: 7
+    center: [-118.35, 34.03],
+    zoom: 10
   });
 } else {
   document.getElementById('map').innerHTML =
@@ -426,8 +470,31 @@ function whenMapStyleReady(fn) {
 }
 
 function redrawMapContent() {
-  if (currentRoutes && currentRoutes.length) drawRoutes(currentRoutes, { fit: false });
-  renderVisibleStops();
+  // Redraw BOTH things that MapLibre can lose/change around a style switch:
+  // 1) custom route sources/layers, and 2) numbered attraction DOM markers.
+  const visibleStops = getVisibleStops();
+
+  if (currentCircle) {
+    drawSearchCircle(currentCircle, { fit: false });
+  }
+
+  if (currentRoutes && currentRoutes.length) {
+    drawRoutes(currentRoutes, { fit: false });
+  }
+
+  // Draw the numbered circles immediately, then repeat shortly after.
+  // The repeats protect against MapLibre moving/rebuilding marker containers
+  // during a Streets/Outdoor/Satellite style change on slower browsers/phones.
+  drawPins(visibleStops);
+  setTimeout(() => drawPins(getVisibleStops()), 150);
+  setTimeout(() => drawPins(getVisibleStops()), 600);
+
+  renderList(visibleStops);
+  if (currentStops.length) {
+    const hidden = currentStops.length - visibleStops.length;
+    const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
+    status(`Showing ${visibleStops.length} of ${currentStops.length} stops${hidden ? ` (${hidden} hidden by category switches)` : ''}${langNote}.`);
+  }
 }
 
 function switchMapStyle(styleName) {
@@ -444,14 +511,12 @@ function switchMapStyle(styleName) {
   // moment after setStyle(), so do NOT call whenMapStyleReady() immediately.
   // Instead, wait for the NEW style events, then retry until the new style is
   // definitely ready. The extra timed redraws make this robust on slow phones.
-  let redrawDone = false;
   const redrawAfterNewStyle = () => {
     const tryRedraw = () => {
       if (!map || !map.isStyleLoaded()) {
         setTimeout(tryRedraw, 100);
         return;
       }
-      redrawDone = true;
       redrawMapContent();
     };
     tryRedraw();
@@ -465,6 +530,7 @@ function switchMapStyle(styleName) {
   // Fallbacks: if the style event fires oddly or too early, force redraw again.
   setTimeout(redrawAfterNewStyle, 600);
   setTimeout(redrawAfterNewStyle, 1400);
+  setTimeout(redrawAfterNewStyle, 2500);
 
   // update which switcher button looks active
   document.querySelectorAll('.style-btn').forEach(b =>
@@ -478,6 +544,7 @@ let currentRoutes = [];         // all alternative routes from OSRM
 let selectedRouteIdx = null;    // which route the user clicked to scan
 let routeWikiLang = null;       // local Wikipedia language for this route (e.g. 'de','sr')
 let currentMarkers = [];        // numbered map pins, kept so we can reliably remove/redraw them
+let currentCircle = null;        // GeoJSON circle for “near me” searches
 
 /* =====================================================================
    SUPABASE — persistent, shared community verdicts
@@ -772,6 +839,88 @@ ${categoryLines}
   return deduped;
 }
 
+async function circleScan(centerLng, centerLat, radiusKm, selectedCategories) {
+  const center = turf.point([centerLng, centerLat]);
+  const searchCircle = turf.circle(center, radiusKm, { steps: 96, units: 'kilometers' });
+  const [w, s, e, n] = turf.bbox(searchCircle);
+
+  const cats = selectedCategories && selectedCategories.length
+    ? selectedCategories
+    : getSelectedCategories();
+  if (!cats.length) throw new Error('Switch on at least one search category.');
+
+  const categoryLines = cats.map(cat => overpassLinesForCategory(cat, s, w, n, e))
+                            .filter(Boolean).join('\n');
+
+  const query = `
+    [out:json][timeout:120];
+    (
+${categoryLines}
+    );
+    out center 200;
+  `;
+
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 125000);
+
+  let j;
+  try {
+    const r = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: query, signal: controller.signal
+    });
+    if (!r.ok) throw new Error(`the search was too large (server returned ${r.status}). Try switching off some categories.`);
+    j = await r.json();
+  } catch (err) {
+    clearTimeout(abortTimer);
+    if (err.name === 'AbortError') {
+      throw new Error('The nearby attraction search timed out — try switching off some categories.');
+    }
+    throw new Error('Nearby attraction search failed: ' + err.message);
+  }
+  clearTimeout(abortTimer);
+
+  const results = [];
+  for (const el of j.elements) {
+    if (!el.tags || !el.tags.name) continue;
+    const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    const lon = el.lon != null ? el.lon : (el.center && el.center.lon);
+    if (lat == null || lon == null) continue;
+
+    const pt = turf.point([lon, lat]);
+    if (!turf.booleanPointInPolygon(pt, searchCircle)) continue;
+
+    const distKm = turf.distance(center, pt, { units: 'kilometers' });
+    if (distKm > radiusKm) continue;
+
+    const category = categoryForTags(el.tags);
+    results.push({
+      id: `${el.type}/${el.id}`,
+      name: el.tags.name,
+      lat: lat, lng: lon,
+      category: category,
+      kind: CATEGORY_LABELS[category] || el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
+      alongKm: distKm,
+      detourKm: distKm,
+      nearbyMode: true,
+      progress: 0,
+      wikidata: el.tags.wikidata || null,
+      wikipedia: el.tags.wikipedia || null,
+      addr: [el.tags['addr:housenumber'], el.tags['addr:street'],
+             el.tags['addr:city']].filter(Boolean).join(' ') || null
+    });
+  }
+
+  results.sort((a, b) => a.detourKm - b.detourKm);
+
+  const deduped = [];
+  for (const p of results) {
+    const dup = deduped.find(q => q.name === p.name && Math.abs(q.detourKm - p.detourKm) < 0.2);
+    if (!dup) deduped.push(p);
+  }
+  deduped.forEach((p, i) => p.displayNum = i + 1);
+  return { stops: deduped, circle: searchCircle };
+}
+
 /* =====================================================================
    STAGE 3a — enrichment: fetch a short Wikipedia summary + image.
    Called lazily when the user opens a stop's detail panel.
@@ -978,6 +1127,44 @@ async function getTally(poiId) {
    draw pins for whichever route the user selects.
    ===================================================================== */
 
+function clearSearchCircle() {
+  if (!mapReady || !map) return;
+  if (map.getLayer('nearby-circle-fill')) map.removeLayer('nearby-circle-fill');
+  if (map.getLayer('nearby-circle-line')) map.removeLayer('nearby-circle-line');
+  if (map.getSource('nearby-circle')) map.removeSource('nearby-circle');
+}
+
+function clearRouteLayers() {
+  if (!mapReady || !map || !currentRoutes) return;
+  currentRoutes.forEach((_, i) => {
+    if (map.getLayer('route-' + i)) map.removeLayer('route-' + i);
+    if (map.getLayer('route-hit-' + i)) map.removeLayer('route-hit-' + i);
+    if (map.getSource('route-' + i)) map.removeSource('route-' + i);
+  });
+}
+
+function drawSearchCircle(circleGeojson, options = {}) {
+  if (!mapReady || !map || !circleGeojson) return;
+  if (!map.isStyleLoaded()) {
+    whenMapStyleReady(() => drawSearchCircle(circleGeojson, options));
+    return;
+  }
+  clearSearchCircle();
+  map.addSource('nearby-circle', { type: 'geojson', data: circleGeojson });
+  map.addLayer({
+    id: 'nearby-circle-fill', type: 'fill', source: 'nearby-circle',
+    paint: { 'fill-color': '#2f6b4f', 'fill-opacity': 0.12 }
+  });
+  map.addLayer({
+    id: 'nearby-circle-line', type: 'line', source: 'nearby-circle',
+    paint: { 'line-color': '#2f6b4f', 'line-width': 3, 'line-opacity': 0.9 }
+  });
+  if (options.fit !== false && typeof turf !== 'undefined') {
+    const [w, s, e, n] = turf.bbox(circleGeojson);
+    map.fitBounds([[w, s], [e, n]], { padding: 50 });
+  }
+}
+
 /* Draw ALL alternative routes, each in its own colour. Clicking a route
    (on the map) selects it and triggers the scan. The selected route is
    drawn bold/opaque; the others are dimmed so the choice is clear. */
@@ -1090,7 +1277,7 @@ function renderList(stops) {
     li.innerHTML = `
       <span class="seq">${s.displayNum || i+1}</span>
       <h3>${s.name}</h3>
-      <div class="meta">${s.alongKm.toFixed(0)} km into the trip · ${(s.detourKm*1000).toFixed(0)} m off route</div>
+      <div class="meta">${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km into the trip · ${(s.detourKm*1000).toFixed(0)} m off route`}</div>
       <span class="kind">${s.kind}</span>`;
     li.onclick = () => openDetail(s.id);
     ul.appendChild(li);
@@ -1118,7 +1305,7 @@ async function openDetail(poiId) {
   const body = $('detailBody');
   body.innerHTML = `<h2><span class="num-badge">${num}</span> ${s.name}</h2>
     <div class="meta" style="color:var(--muted);font-size:13px">
-      ${s.kind} · ${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour</div>
+      ${s.kind} · ${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour`}</div>
     <div class="summary">Loading description…</div>`;
   $('detail').classList.add('open');
 
@@ -1139,7 +1326,7 @@ async function openDetail(poiId) {
   body.innerHTML = `
     <h2 id="titleText"><span class="num-badge">${num}</span> ${s.name}</h2>
     <div class="meta" style="color:var(--muted);font-size:13px">
-      ${s.kind} · ${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour</div>
+      ${s.kind} · ${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour`}</div>
     ${addrLine}
     ${info && info.img ? `<img src="${info.img}" alt="">` : ''}
     <div class="summary" id="summaryText">${descHtml}</div>
@@ -1206,6 +1393,9 @@ async function selectRoute(idx) {
   selectedRouteIdx = idx;
   const route = currentRoutes[idx];
 
+  currentCircle = null;
+  clearSearchCircle();
+
   // redraw routes so the chosen one is bold and the others dim
   drawRoutes(currentRoutes);
 
@@ -1240,7 +1430,7 @@ async function selectRoute(idx) {
    MAIN — fetch the alternative routes and display them. The scan no
    longer happens automatically; it waits for the user to click a route.
    ===================================================================== */
-$('go').onclick = async () => {
+async function showRoutesFromInputs() {
   if (!turfReady) {
     status('⚠ The geometry library (Turf) failed to load — check your connection and refresh.');
     return;
@@ -1250,7 +1440,9 @@ $('go').onclick = async () => {
   $('stops').innerHTML = '';
   selectedRouteIdx = null;
   currentStops = [];
+  currentCircle = null;
   clearPins();
+  clearSearchCircle();
   routeWikiLang = null;   // reset; will be re-detected for the chosen route
   try {
     status('Finding start and destination…');
@@ -1279,7 +1471,73 @@ $('go').onclick = async () => {
   } finally {
     btn.disabled = false;
   }
-};
+}
+
+async function scanNearLocation(lat, lng) {
+  if (!turfReady) {
+    status('⚠ The geometry library (Turf) failed to load — check your connection and refresh.');
+    return;
+  }
+  const btn = $('nearMe');
+  btn.disabled = true;
+  $('stops').innerHTML = '';
+  $('detail').classList.remove('open');
+  currentStops = [];
+  selectedRouteIdx = null;
+  clearPins();
+  clearRouteLayers();
+  currentRoutes = [];
+  routeWikiLang = await detectWikiLang(lng, lat);
+
+  try {
+    status('Scanning a 3 km circle around your location…');
+    const selectedCategories = getSelectedCategories();
+    const result = await circleScan(lng, lat, 3, selectedCategories);
+    currentCircle = result.circle;
+    currentStops = result.stops;
+    drawSearchCircle(currentCircle);
+    renderVisibleStops();
+    const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
+    status(`Nearby search: found ${currentStops.length} stops within 3 km${langNote}.`);
+  } catch (e) {
+    status('⚠ ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function useMyLocation() {
+  if (!navigator.geolocation) {
+    status('⚠ This browser does not support location. Showing the default Los Angeles → Santa Monica route instead.');
+    showRoutesFromInputs();
+    return;
+  }
+  status('Waiting for location permission…');
+  navigator.geolocation.getCurrentPosition(
+    pos => scanNearLocation(pos.coords.latitude, pos.coords.longitude),
+    err => {
+      status('Location was not allowed. Showing the default Los Angeles → Santa Monica route instead.');
+      showRoutesFromInputs();
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+  );
+}
+
+function drawSelectedMode() {
+  const chosen = document.querySelector('input[name="mapMode"]:checked')?.value || 'route';
+  if (chosen === 'nearby') useMyLocation();
+  else showRoutesFromInputs();
+}
+
+$('go').onclick = showRoutesFromInputs;
+$('nearMe').onclick = useMyLocation;
+if ($('drawSelectedMode')) $('drawSelectedMode').onclick = drawSelectedMode;
+
+window.addEventListener('load', () => {
+  // Start with the visible default route, not Belgrade/Novi Sad.
+  // The user can switch the side-panel toggle to “Use my location” at any time.
+  setTimeout(() => showRoutesFromInputs(), 500);
+});
 </script>
 </body>
 </html>
