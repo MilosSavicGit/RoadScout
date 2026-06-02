@@ -316,12 +316,11 @@
 
     <div class="location-panel" id="locationPanel">
       <div class="location-title">Where should RoadScout draw the map?</div>
-      <div class="location-copy">Choose one mode, then press the draw button. “Use my location” will ask the browser for permission and draw a 3 km circle around you.</div>
+      <div class="location-copy">Choose one mode, then press Show Attractions. “Use my location” will ask the browser for permission and draw a 3 km circle around you.</div>
       <div class="mode-choice">
         <label><input type="radio" name="mapMode" value="nearby"> Use my location — 3 km circle</label>
         <label><input type="radio" name="mapMode" value="route" checked> Use default route — Los Angeles → Santa Monica</label>
       </div>
-      <button class="near-btn" id="drawSelectedMode">Draw selected map</button>
     </div>
 
     <!-- Route input. We accept "lat,lng" OR a place name (geocoded). -->
@@ -365,8 +364,7 @@
       a shorter route.
     </div>
 
-    <button class="go" id="go">Draw selected map</button>
-    <button class="go" id="nearMe" style="background:var(--accent-2)">Ask for my location — 3 km circle</button>
+    <button class="go" id="go">Show Attractions</button>
     <div class="controls-note">
       Uses free public services: OSRM for the route, OpenStreetMap (Overpass)
       for points of interest, Wikipedia for descriptions. Uses public APIs plus the map/database keys already inside this prototype.
@@ -1478,7 +1476,7 @@ async function scanNearLocation(lat, lng) {
     status('⚠ The geometry library (Turf) failed to load — check your connection and refresh.');
     return;
   }
-  const btn = $('nearMe');
+  const btn = $('go');
   btn.disabled = true;
   $('stops').innerHTML = '';
   $('detail').classList.remove('open');
@@ -1530,8 +1528,6 @@ function drawSelectedMode() {
 }
 
 $('go').onclick = drawSelectedMode;
-$('nearMe').onclick = useMyLocation;
-if ($('drawSelectedMode')) $('drawSelectedMode').onclick = drawSelectedMode;
 
 window.addEventListener('load', () => {
   // Start with the visible default route, not Belgrade/Novi Sad.
