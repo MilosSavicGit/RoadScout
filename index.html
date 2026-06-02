@@ -365,7 +365,7 @@
       a shorter route.
     </div>
 
-    <button class="go" id="go">Show routes</button>
+    <button class="go" id="go">Draw selected map</button>
     <button class="go" id="nearMe" style="background:var(--accent-2)">Ask for my location — 3 km circle</button>
     <div class="controls-note">
       Uses free public services: OSRM for the route, OpenStreetMap (Overpass)
@@ -1507,17 +1507,17 @@ async function scanNearLocation(lat, lng) {
 }
 
 function useMyLocation() {
+  const nearbyChoice = document.querySelector('input[name="mapMode"][value="nearby"]');
+  if (nearbyChoice) nearbyChoice.checked = true;
   if (!navigator.geolocation) {
-    status('⚠ This browser does not support location. Showing the default Los Angeles → Santa Monica route instead.');
-    showRoutesFromInputs();
+    status('⚠ This browser does not support location. Switch to default route to show Los Angeles → Santa Monica.');
     return;
   }
   status('Waiting for location permission…');
   navigator.geolocation.getCurrentPosition(
     pos => scanNearLocation(pos.coords.latitude, pos.coords.longitude),
     err => {
-      status('Location was not allowed. Showing the default Los Angeles → Santa Monica route instead.');
-      showRoutesFromInputs();
+      status('Location was not allowed. Your choice stays on location mode. Switch to default route if you want Los Angeles → Santa Monica.');
     },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
   );
@@ -1529,7 +1529,7 @@ function drawSelectedMode() {
   else showRoutesFromInputs();
 }
 
-$('go').onclick = showRoutesFromInputs;
+$('go').onclick = drawSelectedMode;
 $('nearMe').onclick = useMyLocation;
 if ($('drawSelectedMode')) $('drawSelectedMode').onclick = drawSelectedMode;
 
