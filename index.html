@@ -434,12 +434,37 @@ function switchMapStyle(styleName) {
   if (!mapReady || !map || !MAP_STYLES[styleName]) return;
   currentStyle = styleName;
 
-  // Remove DOM markers before changing the basemap. They are separate from
-  // style layers, but clearing them avoids ghost/duplicate pins while switching.
+  // Remove DOM markers before changing the basemap. MapLibre keeps DOM markers
+  // separate from style layers, but clearing them avoids duplicates while the
+  // new style is loading.
   clearPins();
 
+  // IMPORTANT: setStyle() deletes every custom source/layer we added for the
+  // route. Some browsers still report isStyleLoaded() from the OLD style for a
+  // moment after setStyle(), so do NOT call whenMapStyleReady() immediately.
+  // Instead, wait for the NEW style events, then retry until the new style is
+  // definitely ready. The extra timed redraws make this robust on slow phones.
+  let redrawDone = false;
+  const redrawAfterNewStyle = () => {
+    const tryRedraw = () => {
+      if (!map || !map.isStyleLoaded()) {
+        setTimeout(tryRedraw, 100);
+        return;
+      }
+      redrawDone = true;
+      redrawMapContent();
+    };
+    tryRedraw();
+  };
+
+  map.once('style.load', redrawAfterNewStyle);
+  map.once('idle', redrawAfterNewStyle);
+
   map.setStyle(MAP_STYLES[styleName]);
-  whenMapStyleReady(redrawMapContent);
+
+  // Fallbacks: if the style event fires oddly or too early, force redraw again.
+  setTimeout(redrawAfterNewStyle, 600);
+  setTimeout(redrawAfterNewStyle, 1400);
 
   // update which switcher button looks active
   document.querySelectorAll('.style-btn').forEach(b =>
