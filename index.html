@@ -608,10 +608,18 @@ function overpassLinesForCategory(cat, s, w, n, e) {
   if (cat === 'artwork') return line('["tourism"="artwork"]');
   if (cat === 'university') return line('["amenity"="university"]');
   if (cat === 'leisure_park') return [
-    line('["leisure"~"park|garden|nature_reserve|recreation_ground"]'),
-    line('["tourism"="theme_park"]'),
-    line('["boundary"="protected_area"]'),
-    line('["landuse"="recreation_ground"]')
+    // Ordinary city parks and gardens
+    line('["leisure"~"park|garden|nature_reserve|recreation_ground|common|dog_park"]'),
+    // Larger protected/nature areas
+    line('["boundary"~"protected_area|national_park"]'),
+    line('["protect_class"]'),
+    // Parks sometimes mapped as landuse rather than leisure
+    line('["landuse"~"recreation_ground|village_green|forest"]'),
+    // Historic gardens/parks and tourist parks
+    line('["historic"~"park|garden"]'),
+    line('["tourism"~"theme_park|picnic_site|camp_site"]'),
+    // Some big urban green spaces are mapped as natural areas
+    line('["natural"~"wood|heath|grassland"]')
   ].join('\n');
   if (cat === 'peak') return line('["natural"="peak"]');
   if (cat === 'waterfall') return line('["natural"="waterfall"]');
@@ -628,10 +636,13 @@ function categoryForTags(tags) {
   if (tags.tourism === 'artwork') return 'artwork';
   if (tags.amenity === 'university') return 'university';
   if (
-    ['park','garden','nature_reserve','recreation_ground'].includes(tags.leisure) ||
-    tags.tourism === 'theme_park' ||
-    tags.boundary === 'protected_area' ||
-    tags.landuse === 'recreation_ground'
+    ['park','garden','nature_reserve','recreation_ground','common','dog_park'].includes(tags.leisure) ||
+    ['theme_park','picnic_site','camp_site'].includes(tags.tourism) ||
+    ['protected_area','national_park'].includes(tags.boundary) ||
+    tags.protect_class ||
+    ['recreation_ground','village_green','forest'].includes(tags.landuse) ||
+    ['wood','heath','grassland'].includes(tags.natural) ||
+    ['park','garden'].includes(tags.historic)
   ) return 'leisure_park';
   if (tags.natural === 'peak') return 'peak';
   if (tags.natural === 'waterfall') return 'waterfall';
@@ -756,7 +767,7 @@ async function corridorScan(routeLine, widthKm, maxDetourKm, selectedCategories)
     (
 ${categoryLines}
     );
-    out center 200;
+    out center;
   `;
 
   // TIMEOUT 2 (client-side): fetch() has no timeout by default, so a stalled
@@ -785,7 +796,9 @@ ${categoryLines}
   const results = [];
 
   for (const el of j.elements) {
-    if (!el.tags || !el.tags.name) continue;            // skip unnamed clutter
+    if (!el.tags) continue;
+    const placeName = el.tags.name || el.tags['name:en'] || el.tags.int_name || el.tags.official_name;
+    if (!placeName) continue;            // skip unnamed clutter
 
     // Nodes have lat/lon directly; ways/relations (buildings) have their
     // coordinate in el.center (because we used "out center"). Handle both.
@@ -809,7 +822,7 @@ ${categoryLines}
 
     results.push({
       id: `${el.type}/${el.id}`,
-      name: el.tags.name,
+      name: placeName,
       lat: lat, lng: lon,
       category: category,
       kind: CATEGORY_LABELS[category] || el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
@@ -864,7 +877,7 @@ async function circleScan(centerLng, centerLat, radiusKm, selectedCategories) {
     (
 ${categoryLines}
     );
-    out center 200;
+    out center;
   `;
 
   const controller = new AbortController();
@@ -888,7 +901,9 @@ ${categoryLines}
 
   const results = [];
   for (const el of j.elements) {
-    if (!el.tags || !el.tags.name) continue;
+    if (!el.tags) continue;
+    const placeName = el.tags.name || el.tags['name:en'] || el.tags.int_name || el.tags.official_name;
+    if (!placeName) continue;
     const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
     const lon = el.lon != null ? el.lon : (el.center && el.center.lon);
     if (lat == null || lon == null) continue;
@@ -902,7 +917,7 @@ ${categoryLines}
     const category = categoryForTags(el.tags);
     results.push({
       id: `${el.type}/${el.id}`,
-      name: el.tags.name,
+      name: placeName,
       lat: lat, lng: lon,
       category: category,
       kind: CATEGORY_LABELS[category] || el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
