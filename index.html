@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RoadScout — notable parks, universities, and Wiki coordinate check</title>
+<title>RoadScout — notable historic, parks, universities, and Wiki coordinate check</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -344,7 +344,7 @@
     <div class="category-panel">
       <label class="category-title">Search categories</label>
       <div class="category-grid" id="categoryGrid">
-        <label><input type="checkbox" class="cat" value="historic" checked> Historic sites</label>
+        <label><input type="checkbox" class="cat" value="historic" checked> Historic sites <span style="color:var(--muted);font-size:11px">(ranked)</span></label>
         <label><input type="checkbox" class="cat" value="heritage" checked> Heritage places</label>
         <label><input type="checkbox" class="cat" value="museum" checked> Museums</label>
         <label><input type="checkbox" class="cat" value="viewpoint" checked> Viewpoints</label>
@@ -671,10 +671,10 @@ function categoryForTags(tags) {
 }
 
 
-// Importance filtering for noisy categories. Parks and universities can return
-// hundreds of small local features, so we keep the ones that are more useful to
-// travellers: notable items (Wikipedia/Wikidata), major parks/reserves, and main
-// university campuses. Everything else keeps the old behaviour.
+// Importance filtering for noisy categories. Historic sites, parks, and universities can return
+// hundreds of small/local features, so we keep the ones that are more useful to
+// travellers: notable items (Wikipedia/Wikidata), major monuments/ruins/castles/memorials,
+// major parks/reserves, and main university campuses. Everything else keeps the old behaviour.
 function normalizedName(name) {
   return (name || '')
     .toLowerCase()
@@ -731,12 +731,48 @@ function parkScore(stop) {
   return score;
 }
 
+function historicScore(stop) {
+  const tags = stop.tags || {};
+  const n = normalizedName(stop.name);
+  let score = 0;
+
+  // Strong notability signals. If OSM has Wikidata/Wikipedia, it is usually a real destination.
+  if (stop.wikidata || stop.wikipedia) score += 6;
+  if (tags.tourism === 'attraction') score += 4;
+  if (tags.heritage || tags['heritage:operator'] || tags['ref:whc']) score += 4;
+
+  // Historic types that are usually interesting to travellers.
+  const h = tags.historic || '';
+  if (['castle','fort','fortress','city_gate','archaeological_site','ruins','monument','memorial','battlefield','tower','citywalls','wayside_cross','manor','palace','building','church','monastery','synagogue','mosque'].includes(h)) score += 3;
+  if (['castle','fort','fortress','archaeological_site','ruins','monument','memorial','battlefield','tower','palace','monastery'].includes(h)) score += 2;
+
+  // Name signals for larger historic destinations and local-language terms.
+  if (/\b(castle|fortress|fort|palace|monument|memorial|museum|ruins|archaeological|ancient|historic|old town|old city|citadel|tower|gate|walls|monastery|abbey|cathedral|church|kalemegdan|budavari|buda castle|var|grad|tvrdjava|spomenik|palata)\b/.test(n)) score += 2;
+
+  // Often too small/noisy when returned in bulk. Keep only if they have a wiki/heritage signal.
+  if (['plaque','blue_plaque','marker','wayside_shrine','milestone','boundary_stone'].includes(h)) score -= 4;
+  if (/\b(plaque|marker|memorial plaque|bench|stone|small|former site|birthplace|house number|wayside|milestone)\b/.test(n)) score -= 3;
+  if (tags.access === 'private') score -= 3;
+
+  return score;
+}
+
 function filterNoisyCategories(stops) {
   const kept = [];
   const seenUniversityRoots = new Set();
   const seenParkNames = new Set();
 
   for (const stop of stops) {
+    if (stop.category === 'historic') {
+      const score = historicScore(stop);
+      // Keep major/notable historic places; drop minor plaques/markers and tiny private objects.
+      // Wikipedia/Wikidata, heritage tags, monuments, castles, forts, ruins, memorials, etc. pass.
+      if (score < 3) continue;
+      stop.importanceScore = score;
+      kept.push(stop);
+      continue;
+    }
+
     if (stop.category === 'university') {
       const score = universityScore(stop);
       // Keep main/notable universities; drop faculties/departments unless notable.
