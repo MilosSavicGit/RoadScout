@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RoadScout — nearby search version</title>
+<title>RoadScout — notable parks, universities, and Wiki coordinate check</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -350,8 +350,8 @@
         <label><input type="checkbox" class="cat" value="viewpoint" checked> Viewpoints</label>
         <label><input type="checkbox" class="cat" value="attraction" checked> Attractions</label>
         <label><input type="checkbox" class="cat" value="artwork" checked> Public art</label>
-        <label><input type="checkbox" class="cat" value="university" checked> Universities</label>
-        <label><input type="checkbox" class="cat" value="leisure_park" checked> Parks &amp; nature</label>
+        <label><input type="checkbox" class="cat" value="university" checked> Universities <span style="color:var(--muted);font-size:11px">(major)</span></label>
+        <label><input type="checkbox" class="cat" value="leisure_park" checked> Parks &amp; nature <span style="color:var(--muted);font-size:11px">(ranked)</span></label>
         <label><input type="checkbox" class="cat" value="peak" checked> Peaks</label>
         <label><input type="checkbox" class="cat" value="waterfall" checked> Waterfalls</label>
         <label><input type="checkbox" class="cat" value="cave" checked> Caves</label>
@@ -542,6 +542,7 @@ let selectedRouteIdx = null;    // which route the user clicked to scan
 let routeWikiLang = null;       // local Wikipedia language for this route (e.g. 'de','sr')
 let currentMarkers = [];        // numbered map pins, kept so we can reliably remove/redraw them
 let currentCircle = null;        // GeoJSON circle for “near me” searches
+let currentSearchArea = null;    // current route corridor or nearby circle, used to reject wrong Wikipedia matches
 
 /* =====================================================================
    SUPABASE — persistent, shared community verdicts
@@ -569,7 +570,7 @@ function getUserToken() {
   return t;
 }
 const USER_TOKEN = getUserToken();
-const APP_VERSION = 'v8_analytics_safe';
+const APP_VERSION = 'v10_wiki_coordinate_check';
 
 // Tiny traffic counter. Fire-and-forget only: analytics must NEVER stop the map.
 function trackEvent(eventType, mode = null, details = {}) {
@@ -669,6 +670,106 @@ function categoryForTags(tags) {
   return 'attraction';
 }
 
+
+// Importance filtering for noisy categories. Parks and universities can return
+// hundreds of small local features, so we keep the ones that are more useful to
+// travellers: notable items (Wikipedia/Wikidata), major parks/reserves, and main
+// university campuses. Everything else keeps the old behaviour.
+function normalizedName(name) {
+  return (name || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isFacultyLikeName(name) {
+  const n = normalizedName(name);
+  return /\b(faculty|school|department|dept|institute|institut|fakultet|fakulteta|college|campus|building|hall|library|laboratory|lab|center|centre)\b/.test(n);
+}
+
+function universityScore(stop) {
+  const tags = stop.tags || {};
+  const n = normalizedName(stop.name);
+  let score = 0;
+  if (stop.wikidata || stop.wikipedia) score += 5;
+  if (tags.website || tags.url) score += 1;
+  if (/\buniversity\b|\buniverzitet\b|\begyetem\b|\bucla\b|\busc\b/.test(n)) score += 3;
+  if (isFacultyLikeName(stop.name)) score -= 4;
+  // Small named faculties with no wiki link are usually clutter for travellers.
+  return score;
+}
+
+function parkScore(stop) {
+  const tags = stop.tags || {};
+  const n = normalizedName(stop.name);
+  let score = 0;
+
+  // Strong notability signals.
+  if (stop.wikidata || stop.wikipedia) score += 6;
+  if (tags.tourism === 'attraction') score += 4;
+  if (tags.boundary === 'national_park') score += 5;
+  if (tags.boundary === 'protected_area' || tags.protect_class) score += 4;
+  if (tags.leisure === 'nature_reserve') score += 4;
+  if (tags.historic === 'park' || tags.historic === 'garden') score += 4;
+
+  // Medium signals: often destination parks/gardens.
+  if (tags.leisure === 'park') score += 2;
+  if (tags.leisure === 'garden') score += 2;
+  if (tags.tourism === 'theme_park') score += 5;
+  if (tags.tourism === 'picnic_site') score += 1;
+  if (tags.landuse === 'forest' || tags.natural === 'wood') score += 2;
+
+  // Name signals for destination places, including local-language words.
+  if (/\b(national|regional|state|city|central|botanical|historic|memorial|island|fortress|castle|arboretum|zoo|nature|reserve|park prirode|gradski|varosliget|margaret|kalemegdan|griffith|palisades)\b/.test(n)) score += 2;
+
+  // Usually too small or too local for this product.
+  if (tags.leisure === 'dog_park') score -= 5;
+  if (/\b(dog|playground|pocket|mini|tiny|small|children|kids|tot lot|community garden)\b/.test(n)) score -= 4;
+  if (tags.access === 'private') score -= 4;
+
+  return score;
+}
+
+function filterNoisyCategories(stops) {
+  const kept = [];
+  const seenUniversityRoots = new Set();
+  const seenParkNames = new Set();
+
+  for (const stop of stops) {
+    if (stop.category === 'university') {
+      const score = universityScore(stop);
+      // Keep main/notable universities; drop faculties/departments unless notable.
+      if (score < 3) continue;
+      const root = normalizedName(stop.name)
+        .replace(/\b(university of|university|univerzitet|egyetem|campus|main)\b/g, '')
+        .trim() || normalizedName(stop.name);
+      if (seenUniversityRoots.has(root) && !(stop.wikidata || stop.wikipedia)) continue;
+      seenUniversityRoots.add(root);
+      stop.importanceScore = score;
+      kept.push(stop);
+      continue;
+    }
+
+    if (stop.category === 'leisure_park') {
+      const score = parkScore(stop);
+      // Keep important parks/nature; drop small local greens. Wikipedia/Wikidata
+      // almost always passes this threshold, so places like Kalemegdan are kept.
+      if (score < 3) continue;
+      const root = normalizedName(stop.name);
+      if (seenParkNames.has(root)) continue;
+      seenParkNames.add(root);
+      stop.importanceScore = score;
+      kept.push(stop);
+      continue;
+    }
+
+    kept.push(stop);
+  }
+
+  return kept;
+}
+
 /* ---------- tiny helpers ---------- */
 const $ = id => document.getElementById(id);
 const status = msg => { $('status').textContent = msg; };
@@ -765,6 +866,7 @@ async function getRoutes(from, to) {
 async function corridorScan(routeLine, widthKm, maxDetourKm, selectedCategories) {
   // (a) build the corridor polygon around the route
   const corridor = turf.buffer(routeLine, widthKm, { units: 'kilometers' });
+  currentSearchArea = corridor;
 
   // (b) bounding box for the Overpass query (Overpass searches a box)
   const [w, s, e, n] = turf.bbox(corridor);
@@ -856,7 +958,8 @@ ${categoryLines}
       wikipedia: el.tags.wikipedia || null,
       // address tags, if present, for display / sanity-checking location
       addr: [el.tags['addr:housenumber'], el.tags['addr:street'],
-             el.tags['addr:city']].filter(Boolean).join(' ') || null
+             el.tags['addr:city']].filter(Boolean).join(' ') || null,
+      tags: el.tags
     });
   }
 
@@ -870,17 +973,20 @@ ${categoryLines}
     if (!dup) deduped.push(p);
   }
 
-  // Give every found point a permanent route-order number. If categories are
+  const filtered = filterNoisyCategories(deduped);
+
+  // Give every kept point a permanent route-order number. If categories are
   // switched on/off later, the visible list may have gaps, but each feature keeps
   // its original number from the full scan.
-  deduped.forEach((p, i) => p.displayNum = i + 1);
+  filtered.forEach((p, i) => p.displayNum = i + 1);
 
-  return deduped;
+  return filtered;
 }
 
 async function circleScan(centerLng, centerLat, radiusKm, selectedCategories) {
   const center = turf.point([centerLng, centerLat]);
   const searchCircle = turf.circle(center, radiusKm, { steps: 96, units: 'kilometers' });
+  currentSearchArea = searchCircle;
   const [w, s, e, n] = turf.bbox(searchCircle);
 
   const cats = selectedCategories && selectedCategories.length
@@ -947,7 +1053,8 @@ ${categoryLines}
       wikidata: el.tags.wikidata || null,
       wikipedia: el.tags.wikipedia || null,
       addr: [el.tags['addr:housenumber'], el.tags['addr:street'],
-             el.tags['addr:city']].filter(Boolean).join(' ') || null
+             el.tags['addr:city']].filter(Boolean).join(' ') || null,
+      tags: el.tags
     });
   }
 
@@ -958,8 +1065,9 @@ ${categoryLines}
     const dup = deduped.find(q => q.name === p.name && Math.abs(q.detourKm - p.detourKm) < 0.2);
     if (!dup) deduped.push(p);
   }
-  deduped.forEach((p, i) => p.displayNum = i + 1);
-  return { stops: deduped, circle: searchCircle };
+  const filtered = filterNoisyCategories(deduped);
+  filtered.forEach((p, i) => p.displayNum = i + 1);
+  return { stops: filtered, circle: searchCircle };
 }
 
 /* =====================================================================
@@ -1065,6 +1173,41 @@ async function translateToEnglish(text, from = 'auto') {
 }
 
 
+/* Wikipedia-coordinate sanity check.
+   Some fuzzy name searches can find a correct-sounding article in the wrong
+   city/country. If Wikipedia gives coordinates, reject the description unless
+   those coordinates fall inside the current search area: the route corridor or
+   the 3 km nearby circle. Exact OSM wikipedia/wikidata links are still checked;
+   this protects against bad OSM tags too. */
+function wikiCoordinatesFitSearch(info, stop) {
+  try {
+    if (!info || !info.coord) return true;
+    if (!currentSearchArea || typeof turf === 'undefined') return true;
+
+    const wikiPt = turf.point([Number(info.coord.lng), Number(info.coord.lat)]);
+    if (turf.booleanPointInPolygon(wikiPt, currentSearchArea)) return true;
+
+    // Small tolerance for big places whose Wikipedia coordinate is slightly
+    // outside the exact Overpass/corridor geometry. If it is still very close
+    // to the OSM point, allow it. Otherwise it is likely the wrong article.
+    const stopPt = turf.point([Number(stop.lng), Number(stop.lat)]);
+    const kmFromStop = turf.distance(stopPt, wikiPt, { units: 'kilometers' });
+    if (kmFromStop <= 0.75) return true;
+
+    console.log('Rejected Wikipedia match outside search area:', {
+      stop: stop.name, wikiTitle: info.title, wikiCoord: info.coord, kmFromStop
+    });
+    return false;
+  } catch (e) {
+    console.log('Wiki coordinate check skipped:', e);
+    return true;
+  }
+}
+
+function validWikiResult(info, stop) {
+  return info && wikiCoordinatesFitSearch(info, stop) ? info : null;
+}
+
 /* Main enrichment: takes the whole stop object so it can see OSM tags. */
 async function fetchSummary(stop) {
   // ---- Tier 1: precise OSM links (reliable, never the wrong place) ----
@@ -1074,12 +1217,14 @@ async function fetchSummary(stop) {
     const lang = stop.wikipedia.slice(0, idx);
     const title = stop.wikipedia.slice(idx + 1);
     const res = await fetchByTitle(title, lang);
-    if (res) return res;
+    const checked = validWikiResult(res, stop);
+    if (checked) return checked;
   }
   // 1b) wikidata ID -> resolve to an article (prefers local language)
   if (stop.wikidata) {
     const res = await fetchByWikidata(stop.wikidata, routeWikiLang);
-    if (res) return res;
+    const checked = validWikiResult(res, stop);
+    if (checked) return checked;
   }
 
   // ---- Tier 2: no precise OSM link -> best-effort name SEARCH.
@@ -1088,10 +1233,12 @@ async function fetchSummary(stop) {
   //      matches as the cost of finding lesser-known places. ----
   if (routeWikiLang && routeWikiLang !== 'en') {
     const local = await fetchFromWiki(stop.name, routeWikiLang, stop.lat, stop.lng);
-    if (local) return local;
+    const checked = validWikiResult(local, stop);
+    if (checked) return checked;
   }
   const en = await fetchFromWiki(stop.name, 'en', stop.lat, stop.lng);
-  if (en) return en;
+  const checked = validWikiResult(en, stop);
+  if (checked) return checked;
 
   return null;   // genuinely nothing found -> honest "no description"
 }
@@ -1437,6 +1584,7 @@ async function selectRoute(idx) {
   const route = currentRoutes[idx];
 
   currentCircle = null;
+  currentSearchArea = null;
   clearSearchCircle();
 
   // redraw routes so the chosen one is bold and the others dim
