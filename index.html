@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RoadScout — notable historic, parks, universities, and Wiki coordinate check</title>
+<title>RoadScout — cleaner 200-item version</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -341,26 +341,30 @@
         <input id="maxDetour" type="number" value="2" min="0.1" max="20" step="0.5">
       </div>
     </div>
+    <div class="row">
+      <div class="field">
+        <label>Max attractions shown</label>
+        <input id="maxAttractions" type="number" value="200" min="20" max="1000" step="20">
+      </div>
+    </div>
     <div class="category-panel">
       <label class="category-title">Search categories</label>
       <div class="category-grid" id="categoryGrid">
-        <label><input type="checkbox" class="cat" value="historic" checked> Historic sites <span style="color:var(--muted);font-size:11px">(ranked)</span></label>
+        <label><input type="checkbox" class="cat" value="historic" checked> Historic sites <span style="color:var(--muted);font-size:11px">(important)</span></label>
         <label><input type="checkbox" class="cat" value="heritage" checked> Heritage places</label>
         <label><input type="checkbox" class="cat" value="museum" checked> Museums</label>
         <label><input type="checkbox" class="cat" value="viewpoint" checked> Viewpoints</label>
         <label><input type="checkbox" class="cat" value="attraction" checked> Attractions</label>
         <label><input type="checkbox" class="cat" value="artwork" checked> Public art</label>
-        <label><input type="checkbox" class="cat" value="university" checked> Universities <span style="color:var(--muted);font-size:11px">(major)</span></label>
-        <label><input type="checkbox" class="cat" value="leisure_park" checked> Parks &amp; nature <span style="color:var(--muted);font-size:11px">(ranked)</span></label>
+        <label><input type="checkbox" class="cat" value="leisure_park" checked> Notable parks &amp; nature</label>
         <label><input type="checkbox" class="cat" value="peak" checked> Peaks</label>
         <label><input type="checkbox" class="cat" value="waterfall" checked> Waterfalls</label>
         <label><input type="checkbox" class="cat" value="cave" checked> Caves</label>
-      </div>
+      </div></div>
     </div>
     <div class="controls-note" style="color:var(--accent);margin-top:6px">
-      ⚠ A wider corridor or too many categories can return too many points. If
-      the search fails, switch off some categories, narrow the corridor, or scan
-      a shorter route.
+      ⚠ This cleaner version keeps art, history, heritage, and notable nature.
+      Ordinary city parks and universities are not included by default; results are capped at 200 unless you change the limit.
     </div>
 
     <button class="go" id="go">Show Attractions</button>
@@ -570,7 +574,7 @@ function getUserToken() {
   return t;
 }
 const USER_TOKEN = getUserToken();
-const APP_VERSION = 'v10_wiki_coordinate_check';
+const APP_VERSION = 'v12_clean_200_notable_nature';
 
 // Tiny traffic counter. Fire-and-forget only: analytics must NEVER stop the map.
 function trackEvent(eventType, mode = null, details = {}) {
@@ -606,8 +610,7 @@ const CATEGORY_LABELS = {
   viewpoint: 'Viewpoint',
   attraction: 'Attraction',
   artwork: 'Public art',
-  university: 'University',
-  leisure_park: 'Parks & nature',
+  leisure_park: 'Notable parks & nature',
   peak: 'Peak',
   waterfall: 'Waterfall',
   cave: 'Cave'
@@ -626,20 +629,19 @@ function overpassLinesForCategory(cat, s, w, n, e) {
   if (cat === 'viewpoint') return line('["tourism"="viewpoint"]');
   if (cat === 'attraction') return line('["tourism"="attraction"]');
   if (cat === 'artwork') return line('["tourism"="artwork"]');
-  if (cat === 'university') return line('["amenity"="university"]');
   if (cat === 'leisure_park') return [
-    // Ordinary city parks and gardens
-    line('["leisure"~"park|garden|nature_reserve|recreation_ground|common|dog_park"]'),
-    // Larger protected/nature areas
-    line('["boundary"~"protected_area|national_park"]'),
-    line('["protect_class"]'),
-    // Parks sometimes mapped as landuse rather than leisure
-    line('["landuse"~"recreation_ground|village_green|forest"]'),
-    // Historic gardens/parks and tourist parks
+    // IMPORTANT: ordinary city parks are intentionally NOT queried here.
+    // Keep only heritage/historic parks, named protected areas, nature reserves,
+    // national parks, and parks that already have Wikipedia/Wikidata tags.
     line('["historic"~"park|garden"]'),
-    line('["tourism"~"theme_park|picnic_site|camp_site"]'),
-    // Some big urban green spaces are mapped as natural areas
-    line('["natural"~"wood|heath|grassland"]')
+    line('["boundary"~"protected_area|national_park"]'),
+    line('["leisure"="nature_reserve"]'),
+    line('["protect_class"]'),
+    line('["leisure"="park"]["wikidata"]'),
+    line('["leisure"="park"]["wikipedia"]'),
+    line('["leisure"="garden"]["wikidata"]'),
+    line('["leisure"="garden"]["wikipedia"]'),
+    line('["tourism"="theme_park"]')
   ].join('\n');
   if (cat === 'peak') return line('["natural"="peak"]');
   if (cat === 'waterfall') return line('["natural"="waterfall"]');
@@ -648,22 +650,23 @@ function overpassLinesForCategory(cat, s, w, n, e) {
 }
 
 function categoryForTags(tags) {
+  // Heritage/historic parks should be classified as notable nature before
+  // generic historic, so Kalemegdan-style parks stay in the nature bucket.
+  if (['park','garden'].includes(tags.historic)) return 'leisure_park';
+  if (
+    tags.leisure === 'nature_reserve' ||
+    ['protected_area','national_park'].includes(tags.boundary) ||
+    tags.protect_class ||
+    tags.tourism === 'theme_park' ||
+    ((tags.leisure === 'park' || tags.leisure === 'garden') && (tags.wikidata || tags.wikipedia))
+  ) return 'leisure_park';
+
   if (tags.historic) return 'historic';
   if (tags.heritage) return 'heritage';
   if (tags.tourism === 'museum') return 'museum';
   if (tags.tourism === 'viewpoint') return 'viewpoint';
   if (tags.tourism === 'attraction') return 'attraction';
   if (tags.tourism === 'artwork') return 'artwork';
-  if (tags.amenity === 'university') return 'university';
-  if (
-    ['park','garden','nature_reserve','recreation_ground','common','dog_park'].includes(tags.leisure) ||
-    ['theme_park','picnic_site','camp_site'].includes(tags.tourism) ||
-    ['protected_area','national_park'].includes(tags.boundary) ||
-    tags.protect_class ||
-    ['recreation_ground','village_green','forest'].includes(tags.landuse) ||
-    ['wood','heath','grassland'].includes(tags.natural) ||
-    ['park','garden'].includes(tags.historic)
-  ) return 'leisure_park';
   if (tags.natural === 'peak') return 'peak';
   if (tags.natural === 'waterfall') return 'waterfall';
   if (tags.natural === 'cave_entrance') return 'cave';
@@ -767,21 +770,7 @@ function filterNoisyCategories(stops) {
       const score = historicScore(stop);
       // Keep major/notable historic places; drop minor plaques/markers and tiny private objects.
       // Wikipedia/Wikidata, heritage tags, monuments, castles, forts, ruins, memorials, etc. pass.
-      if (score < 3) continue;
-      stop.importanceScore = score;
-      kept.push(stop);
-      continue;
-    }
-
-    if (stop.category === 'university') {
-      const score = universityScore(stop);
-      // Keep main/notable universities; drop faculties/departments unless notable.
-      if (score < 3) continue;
-      const root = normalizedName(stop.name)
-        .replace(/\b(university of|university|univerzitet|egyetem|campus|main)\b/g, '')
-        .trim() || normalizedName(stop.name);
-      if (seenUniversityRoots.has(root) && !(stop.wikidata || stop.wikipedia)) continue;
-      seenUniversityRoots.add(root);
+      if (score < 4) continue;
       stop.importanceScore = score;
       kept.push(stop);
       continue;
@@ -791,7 +780,7 @@ function filterNoisyCategories(stops) {
       const score = parkScore(stop);
       // Keep important parks/nature; drop small local greens. Wikipedia/Wikidata
       // almost always passes this threshold, so places like Kalemegdan are kept.
-      if (score < 3) continue;
+      if (score < 4) continue;
       const root = normalizedName(stop.name);
       if (seenParkNames.has(root)) continue;
       seenParkNames.add(root);
@@ -804,6 +793,37 @@ function filterNoisyCategories(stops) {
   }
 
   return kept;
+}
+
+
+function stopPriority(stop) {
+  let score = stop.importanceScore || 0;
+  if (stop.wikidata || stop.wikipedia) score += 8;
+  if (stop.category === 'heritage') score += 6;
+  if (stop.category === 'museum') score += 5;
+  if (stop.category === 'artwork') score += 3;
+  if (stop.category === 'historic') score += 3;
+  if (stop.category === 'leisure_park') score += 3;
+  if (stop.category === 'peak' || stop.category === 'waterfall' || stop.category === 'cave') score += 2;
+  return score;
+}
+
+function capAttractions(stops, maxAttractions, sortKey = 'alongKm') {
+  const cap = parseInt(maxAttractions, 10);
+  if (!cap || cap < 1 || stops.length <= cap) return stops;
+
+  // Keep the most important places first, then prefer closer-to-route / closer-to-user.
+  const selected = [...stops]
+    .sort((a, b) => {
+      const byScore = stopPriority(b) - stopPriority(a);
+      if (byScore) return byScore;
+      return (a.detourKm || 0) - (b.detourKm || 0);
+    })
+    .slice(0, cap);
+
+  // Put the selected set back in natural order for display.
+  selected.sort((a, b) => (a[sortKey] || 0) - (b[sortKey] || 0));
+  return selected;
 }
 
 /* ---------- tiny helpers ---------- */
@@ -1009,7 +1029,7 @@ ${categoryLines}
     if (!dup) deduped.push(p);
   }
 
-  const filtered = filterNoisyCategories(deduped);
+  const filtered = capAttractions(filterNoisyCategories(deduped), $('maxAttractions') ? $('maxAttractions').value : 200, 'alongKm');
 
   // Give every kept point a permanent route-order number. If categories are
   // switched on/off later, the visible list may have gaps, but each feature keeps
@@ -1101,7 +1121,7 @@ ${categoryLines}
     const dup = deduped.find(q => q.name === p.name && Math.abs(q.detourKm - p.detourKm) < 0.2);
     if (!dup) deduped.push(p);
   }
-  const filtered = filterNoisyCategories(deduped);
+  const filtered = capAttractions(filterNoisyCategories(deduped), $('maxAttractions') ? $('maxAttractions').value : 200, 'detourKm');
   filtered.forEach((p, i) => p.displayNum = i + 1);
   return { stops: filtered, circle: searchCircle };
 }
