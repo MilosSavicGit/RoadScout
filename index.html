@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>RoadScout — cleaner 200-item version</title>
+<title>RoadScout — clean 200 debugged map version</title>
 
 <!-- ============================================================
      EXTERNAL LIBRARIES (loaded from public CDNs, no install)
@@ -360,7 +360,7 @@
         <label><input type="checkbox" class="cat" value="peak" checked> Peaks</label>
         <label><input type="checkbox" class="cat" value="waterfall" checked> Waterfalls</label>
         <label><input type="checkbox" class="cat" value="cave" checked> Caves</label>
-      </div></div>
+      </div>
     </div>
     <div class="controls-note" style="color:var(--accent);margin-top:6px">
       ⚠ This cleaner version keeps art, history, heritage, and notable nature.
@@ -574,7 +574,7 @@ function getUserToken() {
   return t;
 }
 const USER_TOKEN = getUserToken();
-const APP_VERSION = 'v12_clean_200_notable_nature';
+const APP_VERSION = 'v13_clean_200_debugged_map';
 
 // Tiny traffic counter. Fire-and-forget only: analytics must NEVER stop the map.
 function trackEvent(eventType, mode = null, details = {}) {
