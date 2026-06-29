@@ -1,24 +1,96 @@
-# cultural-map
-Find cultural attractions along your driving route
+# RoadScout
 
-A trip-planning web app that scans your driving route for cultural attractions worth stopping for — historic sites, museums, viewpoints, monuments, and more — listed in the order you'll reach them along the way.
-Code is written to work in most of the world using local language. Very long trips may not return the list since they may timeout. The best is to divide the trip in smaller segments.
+**Part of ScoutPlatform**
 
-## What it does
+RoadScout is a browser-based geospatial application that helps users
+discover cultural, historical, artistic and natural places along driving
+routes or near their current location.
 
-- Enter a start and destination, and see the available driving routes.
-- Pick a route, and the app scans a corridor along it for nearby points of interest.
-- Each attraction shows a description and photo (pulled from Wikipedia, in the local language where available) plus how far it is into the trip and off the route.
-- Rate places you've visited: Worth it / Meh / Skip it.
+RoadScout is one of the first applications built on **ScoutPlatform**, a
+family of lightweight exploration tools designed to help people
+**discover, document and share knowledge about places around the world**
+using open geographic resources.
 
-## How it works
+------------------------------------------------------------------------
 
-Built as a single self-contained HTML file using free, open mapping services:
-- **OSRM** for routing
-- **OpenStreetMap (Overpass API)** for points of interest
-- **Wikipedia / Wikidata** for descriptions and images
-- **MapLibre GL** for the map display
+# Overview
 
-## Status
+Unlike a conventional map, RoadScout scans a driving route or a nearby
+search area and identifies attractions that may be worth stopping for.
 
-Early prototype — works on short-to-medium routes across most of the world. A work in progress.
+## Attractions
+
+-   Historic sites
+-   Heritage places
+-   Museums
+-   Viewpoints
+-   Public art
+-   Cultural attractions
+-   Notable parks and nature
+-   Peaks
+-   Waterfalls
+-   Caves
+
+------------------------------------------------------------------------
+
+# Technology Stack
+
+## Front End
+
+-   HTML5
+-   CSS3
+-   Vanilla JavaScript (ES6)
+
+## Mapping
+
+-   MapLibre GL JS
+-   MapTiler
+-   OpenStreetMap
+
+## Search
+
+-   OSRM
+-   Nominatim
+-   Overpass API
+-   Turf.js
+
+## Database
+
+-   Supabase
+
+------------------------------------------------------------------------
+
+# ScoutPlatform
+
+Current applications:
+
+-   🛣 RoadScout
+-   🏖 BeachScout
+
+Planned applications:
+
+-   ⛰ MountainScout
+-   🏛 HeritageScout
+-   🌊 LakeScout
+-   🕳 CaveScout
+-   🐦 BirdScout
+
+------------------------------------------------------------------------
+
+# Roadmap
+
+RoadScout 2.0 will introduce:
+
+-   Community photo uploads
+-   Community descriptions
+-   Moderation
+-   Translation
+-   Shared ScoutPlatform engine
+
+------------------------------------------------------------------------
+
+# Created by
+
+**Milos Savic**
+
+Belgrade, Serbia
