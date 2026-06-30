@@ -300,7 +300,120 @@
   }
   .near-btn:hover { filter: brightness(1.06); }
 
+
+
+  /* ---- Predictive country/place search ---- */
+  .suggestion-box {
+    margin-top: 6px;
+    display: grid;
+    gap: 5px;
+  }
+  .suggestion-btn {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .suggestion-btn:hover {
+    border-color: var(--accent);
+    background: #fffaf1;
+  }
+
   .empty { color: var(--muted); font-style: italic; margin-top: 20px; font-size: 14px; }
+
+  /* ---- Community contribution upload/gallery ---- */
+  .community-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+  }
+  .community-section h3 {
+    margin: 0 0 8px;
+    font-size: 17px;
+  }
+  .community-gallery {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin: 8px 0 12px;
+  }
+  .community-gallery img {
+    width: 100%;
+    max-height: 260px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin: 0;
+    background: #eee;
+  }
+  .community-description {
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 9px 10px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: #fff;
+    margin: 6px 0 8px;
+  }
+  .upload-box {
+    margin-top: 10px;
+    padding: 11px;
+    border: 1px dashed var(--rule);
+    border-radius: 8px;
+    background: #fffaf1;
+  }
+  .upload-box input,
+  .upload-box textarea {
+    width: 100%;
+    margin-top: 7px;
+    padding: 9px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    font: inherit;
+    font-size: 14px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .upload-box textarea {
+    min-height: 86px;
+    resize: vertical;
+  }
+  .upload-box button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent-2);
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .photo-note,
+  .word-count {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+    margin-top: 5px;
+  }
+  .no-photo {
+    text-align: center;
+    padding: 12px 6px;
+    background: #f8f3ea;
+    border: 1px dashed var(--rule);
+    border-radius: 8px;
+    margin: 8px 0;
+    color: var(--muted);
+    font-style: italic;
+  }
+
 </style>
 </head>
 
@@ -322,14 +435,21 @@
       </div>
     </div>
 
-    <!-- Route input. We accept "lat,lng" OR a place name (geocoded). -->
+    <!-- Country and route input. We accept "lat,lng" OR a place name (geocoded). -->
+    <div class="field">
+      <label>Country</label>
+      <input id="countrySearch" placeholder="Start typing country, e.g. Serbia" value="United States">
+      <div id="countrySuggestions" class="suggestion-box"></div>
+    </div>
     <div class="field">
       <label>From</label>
-      <input id="from" placeholder="e.g. Los Angeles, CA  or  34.0522,-118.2437" value="Los Angeles, CA">
+      <input id="from" placeholder="e.g. Los Angeles, CA  or  34.0522,-118.2437" value="Los Angeles, CA" autocomplete="off">
+      <div id="fromSuggestions" class="suggestion-box"></div>
     </div>
     <div class="field">
       <label>To</label>
-      <input id="to" placeholder="e.g. Santa Monica, CA  or  34.0195,-118.4912" value="Santa Monica, CA">
+      <input id="to" placeholder="e.g. Santa Monica, CA  or  34.0195,-118.4912" value="Santa Monica, CA" autocomplete="off">
+      <div id="toSuggestions" class="suggestion-box"></div>
     </div>
     <div class="row">
       <div class="field">
@@ -574,7 +694,9 @@ function getUserToken() {
   return t;
 }
 const USER_TOKEN = getUserToken();
-const APP_VERSION = 'v13_clean_200_debugged_map';
+const APP_VERSION = 'v14_roadscout_user_photos';
+const ROAD_PHOTO_BUCKET = 'road-photos';
+const ROAD_PHOTO_TABLE = 'road_photos';
 
 // Tiny traffic counter. Fire-and-forget only: analytics must NEVER stop the map.
 function trackEvent(eventType, mode = null, details = {}) {
@@ -600,6 +722,201 @@ const tallyCache = {};
 
 // distinct colours for up to 3+ routes (selected one gets full opacity)
 const ROUTE_COLORS = ['#b5471f', '#2f6b4f', '#3a5a8c', '#8a5a2b', '#6b3a6b'];
+
+
+/* =====================================================================
+   PREDICTIVE COUNTRY AND PLACE SEARCH
+   Same behaviour as BeachScout: choose country first, then From/To
+   suggestions are restricted to that country. Worldwide searches globally.
+   ===================================================================== */
+const countryNames = ["Worldwide", "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Costa Rica", "Cote d'Ivoire", "Croatia", "Cuba", "Cyprus", "Czech Republic", "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Fiji", "Finland", "France", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Macedonia", "Norway", "Oman", "Pakistan", "Palau", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal", "Qatar", "Romania", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria", "Taiwan, China", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe", "Aruba", "Bermuda", "British Virgin Islands", "Cayman Islands", "Cook Islands", "Curaçao", "French Guiana", "French Polynesia", "Gibraltar", "Greenland", "Guadeloupe", "Guam", "Hong Kong", "Jersey", "Martinique", "Montserrat", "New Caledonia", "Puerto Rico", "Réunion", "Saint Martin", "Sint Maarten", "Turks and Caicos Islands", "U.S. Virgin Islands"];
+
+let currentCountry = 'United States';
+let countrySuggestTimer = null;
+let fromSuggestTimer = null;
+let toSuggestTimer = null;
+let placeSuggestToken = { from: 0, to: 0 };
+let selectedPlaceCache = { from: null, to: null };
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
+
+function nominatimCountryCode(country) {
+  const map = {
+    'Albania':'al','Australia':'au','Austria':'at','Belgium':'be','Brazil':'br',
+    'Bulgaria':'bg','Canada':'ca','China':'cn','Croatia':'hr','Cyprus':'cy',
+    'Denmark':'dk','France':'fr','Germany':'de','Greece':'gr','Italy':'it',
+    'Japan':'jp','Montenegro':'me','Netherlands':'nl','New Zealand':'nz',
+    'Portugal':'pt','Serbia':'rs','South Africa':'za','South Korea':'kr',
+    'Spain':'es','Thailand':'th','Turkey':'tr','United Kingdom':'gb',
+    'United States':'us','Taiwan, China':'tw','Mexico':'mx','Romania':'ro',
+    'Hungary':'hu','Slovenia':'si','Bosnia and Herzegovina':'ba','North Macedonia':'mk'
+  };
+  return map[country] || '';
+}
+
+function setCountry(name) {
+  currentCountry = name || 'Worldwide';
+  const input = $('countrySearch');
+  if (input) input.value = currentCountry;
+  const box = $('countrySuggestions');
+  if (box) box.innerHTML = '';
+  selectedPlaceCache.from = null;
+  selectedPlaceCache.to = null;
+  status(`Selected ${currentCountry}. Start typing From and To places.`);
+}
+
+function showCountrySuggestions(query) {
+  const box = $('countrySuggestions');
+  if (!box) return;
+  const q = String(query || '').trim().toLowerCase();
+  box.innerHTML = '';
+  if (!q) return;
+
+  const matches = countryNames
+    .filter(name => name.toLowerCase().includes(q))
+    .sort((a,b) => {
+      const al = a.toLowerCase(), bl = b.toLowerCase();
+      const ap = al.startsWith(q), bp = bl.startsWith(q);
+      if (ap && !bp) return -1;
+      if (!ap && bp) return 1;
+      return a.localeCompare(b);
+    })
+    .slice(0, 8);
+
+  if (!matches.length) {
+    box.innerHTML = '<div class="photo-note">No matching country.</div>';
+    return;
+  }
+
+  matches.forEach(name => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'suggestion-btn';
+    btn.textContent = name;
+    btn.onclick = () => setCountry(name);
+    box.appendChild(btn);
+  });
+}
+
+function scheduleCountrySuggestions() {
+  clearTimeout(countrySuggestTimer);
+  countrySuggestTimer = setTimeout(() => showCountrySuggestions($('countrySearch').value), 150);
+}
+
+function placeChoiceLabel(res) {
+  const a = res.address || {};
+  const main = a.city || a.town || a.village || a.hamlet || a.municipality || a.suburb || res.name || res.display_name || 'Unknown place';
+  const parts = [main, a.municipality, a.county, a.state || a.region, a.country].filter(Boolean);
+  const seen = new Set();
+  return parts.filter(part => {
+    const key = String(part).toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join(', ');
+}
+
+function shortPlaceLabel(res) {
+  const a = res.address || {};
+  const main = a.city || a.town || a.village || a.hamlet || a.municipality || a.county || res.name || res.display_name || 'Unknown place';
+  const region = a.state || a.region || a.county || a.province || '';
+  const country = a.country || '';
+  const parts = [main];
+  if (region && region !== main) parts.push(region);
+  if (country) parts.push(country);
+  const base = parts.filter(Boolean).join(', ');
+  const type = res.addresstype || res.type || res.class || '';
+  return type ? `${base} • ${type}` : base;
+}
+
+async function geocodePlaceOptions(query) {
+  const country = currentCountry || 'Worldwide';
+  const q = (country === 'Worldwide') ? query : `${query}, ${country}`;
+  const countryCode = country === 'Worldwide' ? '' : nominatimCountryCode(country);
+  let url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`;
+  if (countryCode) url += `&countrycodes=${encodeURIComponent(countryCode)}`;
+  const r = await fetch(url, { headers: { 'Accept': 'application/json', 'Accept-Language': 'en' } });
+  if (!r.ok) throw new Error('Place search failed');
+  let results = await r.json();
+
+  if (country && country !== 'Worldwide') {
+    const selected = country.toLowerCase().replace(', china', '');
+    results = (results || []).filter(res => {
+      const c = (res.address?.country || '').toLowerCase();
+      if (country === 'Taiwan, China') return c.includes('taiwan');
+      return c === selected || c.includes(selected);
+    });
+  }
+
+  return results || [];
+}
+
+function showPlaceSuggestions(fieldId, results) {
+  const box = $(fieldId + 'Suggestions');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!results || !results.length) {
+    box.innerHTML = '<div class="photo-note">No matching place found. Try a nearby larger town.</div>';
+    return;
+  }
+
+  results.forEach(res => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'suggestion-btn';
+    btn.textContent = shortPlaceLabel(res);
+    btn.title = res.display_name || btn.textContent;
+    btn.onclick = () => {
+      const label = placeChoiceLabel(res);
+      $(fieldId).value = label;
+      selectedPlaceCache[fieldId] = {
+        value: label,
+        lat: Number(res.lat),
+        lng: Number(res.lon),
+        display_name: res.display_name || label
+      };
+      box.innerHTML = '';
+    };
+    box.appendChild(btn);
+  });
+}
+
+function schedulePlaceSuggestions(fieldId) {
+  const input = $(fieldId);
+  const box = $(fieldId + 'Suggestions');
+  if (!input || !box) return;
+  clearTimeout(fieldId === 'from' ? fromSuggestTimer : toSuggestTimer);
+  const q = input.value.trim();
+  selectedPlaceCache[fieldId] = null;
+  if (q.length < 3) { box.innerHTML = ''; return; }
+  const token = ++placeSuggestToken[fieldId];
+  const timer = setTimeout(async () => {
+    try {
+      box.innerHTML = '<div class="photo-note">Finding matching places...</div>';
+      const results = await geocodePlaceOptions(q);
+      if (token !== placeSuggestToken[fieldId]) return;
+      showPlaceSuggestions(fieldId, results);
+    } catch(e) {
+      if (token !== placeSuggestToken[fieldId]) return;
+      box.innerHTML = '<div class="photo-note">Could not load suggestions. You can still press Show Attractions.</div>';
+    }
+  }, 500);
+  if (fieldId === 'from') fromSuggestTimer = timer;
+  else toSuggestTimer = timer;
+}
+
+function resolvePlaceFromInput(fieldId) {
+  const input = $(fieldId);
+  const text = input ? input.value.trim() : '';
+  const selected = selectedPlaceCache[fieldId];
+  if (selected && selected.value === text && Number.isFinite(selected.lat) && Number.isFinite(selected.lng)) {
+    return Promise.resolve({ lng: selected.lng, lat: selected.lat });
+  }
+  return resolvePlace(text);
+}
+
 
 // Search categories shown in the side panel. These build the Overpass query
 // and also label/filter each result after it is found.
@@ -832,13 +1149,20 @@ const status = msg => { $('status').textContent = msg; };
 
 /* Accept either "lat,lng" typed directly, or a place name we geocode. */
 async function resolvePlace(text) {
-  const m = text.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  const clean = String(text || '').trim();
+  const m = clean.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
   if (m) return { lng: parseFloat(m[2]), lat: parseFloat(m[1]) };
-  // Geocode with the free Nominatim service.
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(text)}`;
+
+  // Geocode with Nominatim. If a country has been selected, restrict search to it.
+  const country = currentCountry || 'Worldwide';
+  const q = (country === 'Worldwide') ? clean : `${clean}, ${country}`;
+  const countryCode = country === 'Worldwide' ? '' : nominatimCountryCode(country);
+  let url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=${encodeURIComponent(q)}`;
+  if (countryCode) url += `&countrycodes=${encodeURIComponent(countryCode)}`;
+
   const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
   const j = await r.json();
-  if (!j.length) throw new Error(`Couldn't find "${text}"`);
+  if (!j.length) throw new Error(`Couldn't find "${clean}"`);
   return { lng: parseFloat(j[0].lon), lat: parseFloat(j[0].lat) };
 }
 
@@ -1299,6 +1623,273 @@ async function fetchSummary(stop) {
   return null;   // genuinely nothing found -> honest "no description"
 }
 
+
+/* =====================================================================
+   COMMUNITY PHOTOS + DESCRIPTIONS — RoadScout user contributions
+   ===================================================================== */
+let activeUploadStop = null;
+let activeUploadStatusId = null;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[c]));
+}
+
+function countChars(text) {
+  return Array.from(String(text || '')).length;
+}
+
+function limitChars(text, maxChars = 300) {
+  return Array.from(String(text || '')).slice(0, maxChars).join('');
+}
+
+function safeFilePart(s) {
+  return String(s || 'roadscout-place')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'roadscout-place';
+}
+
+function setUploadStatus(msg, success = false) {
+  const el = activeUploadStatusId ? document.getElementById(activeUploadStatusId) : null;
+  if (!el) return;
+  if (success) {
+    el.innerHTML = `<div style="padding:8px;border-radius:7px;background:#ecfdf5;border:1px solid #86efac;color:#166534;font-weight:bold;">${escapeHtml(msg)}</div>`;
+  } else {
+    el.textContent = msg;
+  }
+}
+
+function updateSelectedPhotoCount() {
+  const input = document.getElementById('userPhotoInput');
+  const countEl = document.getElementById('userPhotoSelectedCount');
+  if (!input || !countEl) return;
+  const count = input.files ? input.files.length : 0;
+  if (count === 0) {
+    countEl.textContent = 'No photos selected.';
+    countEl.style.color = 'var(--muted)';
+  } else if (count > 5) {
+    countEl.textContent = `${count} photos selected. Maximum is 5. Please remove ${count - 5}.`;
+    countEl.style.color = '#b91c1c';
+  } else {
+    countEl.textContent = `${count} photo${count === 1 ? '' : 's'} selected. They will wait for approval.`;
+    countEl.style.color = 'var(--muted)';
+  }
+}
+
+async function resizeImageFileToJpeg(file, maxSize = 1200, quality = 0.75) {
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.type || '')) {
+    throw new Error('Please use JPG, PNG or WEBP. HEIC is not supported yet.');
+  }
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not read image. Try JPG, PNG or WEBP.'));
+    image.src = dataUrl;
+  });
+  let w = img.width;
+  let h = img.height;
+  if (w > h && w > maxSize) {
+    h = Math.round(h * maxSize / w);
+    w = maxSize;
+  } else if (h >= w && h > maxSize) {
+    w = Math.round(w * maxSize / h);
+    h = maxSize;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob) throw new Error('Could not resize image.');
+  return blob;
+}
+
+async function getApprovedRoadPhotos(stop, limit = 5) {
+  try {
+    if (!supaReady || !supa) return [];
+    const lat = Number(stop.lat);
+    const lon = Number(stop.lng);
+    const tol = 0.001;
+    const { data, error } = await supa
+      .from(ROAD_PHOTO_TABLE)
+      .select('image_url, description, created_at, place_name')
+      .eq('status', 'approved')
+      .gte('place_lat', lat - tol)
+      .lte('place_lat', lat + tol)
+      .gte('place_lon', lon - tol)
+      .lte('place_lon', lon + tol)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.log('approved RoadScout photo lookup failed:', error.message || error);
+      return [];
+    }
+    return (data || []).filter(row => row.image_url || row.description).map(row => ({
+      url: row.image_url || '',
+      source: 'RoadScout community contribution',
+      description: row.description || ''
+    }));
+  } catch (e) {
+    console.log('approved RoadScout photo lookup failed:', e);
+    return [];
+  }
+}
+
+function renderCommunityPhotos(photos) {
+  if (!photos || !photos.length) {
+    return '<div class="no-photo">No approved community photos or descriptions yet.</div>';
+  }
+  const imgs = photos.filter(p => p.url).map((p, idx) =>
+    `<img src="${escapeHtml(p.url)}" alt="RoadScout community photo ${idx + 1}">`
+  ).join('');
+  const descriptions = photos.filter(p => p.description).map(p =>
+    `<div class="community-description">${escapeHtml(p.description)}</div>`
+  ).join('');
+  return `${imgs ? `<div class="community-gallery">${imgs}</div>` : ''}${descriptions}<div class="photo-note">Source: RoadScout community contributions</div>`;
+}
+
+async function uploadPhotosForCurrentStop() {
+  if (!activeUploadStop) {
+    setUploadStatus('No selected place.');
+    return;
+  }
+  if (!supaReady || !supa) {
+    setUploadStatus('Supabase is not available.');
+    return;
+  }
+  const input = document.getElementById('userPhotoInput');
+  const descEl = document.getElementById('userPhotoDesc');
+  const files = input && input.files ? Array.from(input.files) : [];
+  const rawDescription = descEl ? descEl.value.trim() : '';
+  const charCount = countChars(rawDescription);
+  const description = limitChars(rawDescription, 300);
+
+  if (charCount > 300) {
+    setUploadStatus('Description is too long. Please keep it to 300 characters.');
+    return;
+  }
+  if (files.length > 5) {
+    setUploadStatus('Please choose no more than 5 photos.');
+    return;
+  }
+  if (!files.length && !description) {
+    setUploadStatus('Choose up to 5 photos or write a description first.');
+    return;
+  }
+
+  try {
+    const stop = activeUploadStop;
+    const insertedRows = [];
+    if (files.length) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadStatus(`Resizing photo ${i + 1} of ${files.length}...`);
+        const smallBlob = await resizeImageFileToJpeg(file, 1200, 0.75);
+        const fileName = `${safeFilePart(stop.name)}_${Number(stop.lat).toFixed(5)}_${Number(stop.lng).toFixed(5)}_${Date.now()}_${i + 1}.jpg`;
+        const path = `${USER_TOKEN}/${fileName}`;
+        setUploadStatus(`Uploading photo ${i + 1} of ${files.length}. Please wait.`);
+        const { error: uploadError } = await supa.storage
+          .from(ROAD_PHOTO_BUCKET)
+          .upload(path, smallBlob, { contentType: 'image/jpeg', upsert: false });
+        if (uploadError) throw uploadError;
+        const { data: publicData } = supa.storage
+          .from(ROAD_PHOTO_BUCKET)
+          .getPublicUrl(path);
+        insertedRows.push({
+          place_id: stop.id,
+          place_name: stop.name,
+          place_lat: stop.lat,
+          place_lon: stop.lng,
+          description: description,
+          image_url: publicData?.publicUrl || '',
+          storage_path: path,
+          user_token: USER_TOKEN,
+          status: 'pending',
+          app_version: APP_VERSION
+        });
+      }
+    } else {
+      insertedRows.push({
+        place_id: stop.id,
+        place_name: stop.name,
+        place_lat: stop.lat,
+        place_lon: stop.lng,
+        description: description,
+        image_url: '',
+        storage_path: '',
+        user_token: USER_TOKEN,
+        status: 'pending',
+        app_version: APP_VERSION
+      });
+    }
+
+    setUploadStatus('Saving contribution details...');
+    const { error: dbError } = await supa.from(ROAD_PHOTO_TABLE).insert(insertedRows);
+    if (dbError) throw dbError;
+
+    setUploadStatus(
+      files.length
+        ? `${files.length} photo${files.length === 1 ? '' : 's'} uploaded. They are waiting for approval.`
+        : 'Description uploaded. It is waiting for approval.',
+      true
+    );
+    if (input) input.value = '';
+    if (descEl) descEl.value = '';
+    const wc = document.getElementById('userPhotoWordCount');
+    if (wc) wc.textContent = '0 / 300 characters';
+    updateSelectedPhotoCount();
+    trackEvent('roadscout_user_photo_uploaded', 'photo', {
+      place_id: stop.id,
+      place_name: stop.name,
+      place_lat: stop.lat,
+      place_lon: stop.lng,
+      photo_count: files.length,
+      has_description: !!description
+    });
+  } catch (e) {
+    console.warn('RoadScout upload failed', e);
+    let detail = 'unknown error';
+    try {
+      if (e && typeof e === 'object') detail = e.message || e.error_description || e.error || e.statusText || JSON.stringify(e);
+      else if (e) detail = String(e);
+    } catch (_) {}
+    setUploadStatus('Upload failed: ' + detail);
+  }
+}
+
+function wireContributionControls(stop) {
+  activeUploadStop = stop;
+  activeUploadStatusId = 'roadUploadStatus';
+  setTimeout(() => {
+    const desc = document.getElementById('userPhotoDesc');
+    const wc = document.getElementById('userPhotoWordCount');
+    if (desc && wc) {
+      desc.addEventListener('input', () => {
+        const chars = countChars(desc.value);
+        wc.textContent = `${chars} / 300 characters`;
+        wc.style.color = chars > 300 ? '#b91c1c' : 'var(--muted)';
+      });
+    }
+    const photoInput = document.getElementById('userPhotoInput');
+    if (photoInput) {
+      photoInput.addEventListener('change', updateSelectedPhotoCount);
+      updateSelectedPhotoCount();
+    }
+    const uploadBtn = document.getElementById('roadUploadButton');
+    if (uploadBtn) uploadBtn.onclick = uploadPhotosForCurrentStop;
+  }, 50);
+}
+
 /* =====================================================================
    STAGE 3b — ratings, now backed by Supabase (persistent, shared).
    These were once the only in-memory placeholders; now they talk to a
@@ -1558,6 +2149,7 @@ async function openDetail(poiId) {
   // enrichment (Wikipedia) — pass the whole stop so it can use OSM tags
   const info = await fetchSummary(s);
   const t = await getTally(poiId);
+  const communityPhotos = await getApprovedRoadPhotos(s, 5);
   const addrLine = s.addr ? `<div class="meta" style="color:var(--muted);font-size:12px;margin-top:2px">📍 ${s.addr}</div>` : '';
   const descHtml = info && info.text
     ? info.text
@@ -1580,12 +2172,30 @@ async function openDetail(poiId) {
 
     <div class="verdict-q">Did you stop here? Your verdict:</div>
     <div class="verdicts">
-      <button id="v-good" class="${t.mine==='good'?'sel-good':''}">Worth it</button>
-      <button id="v-meh"  class="${t.mine==='meh' ?'sel-meh' :''}">Meh</button>
-      <button id="v-skip" class="${t.mine==='skip'?'sel-skip':''}">Skip it</button>
+      <button id="v-good" class="${t.mine==='good'?'sel-good':''}">Yes</button>
+      <button id="v-meh"  class="${t.mine==='meh' ?'sel-meh' :''}">0</button>
+      <button id="v-skip" class="${t.mine==='skip'?'sel-skip':''}">No</button>
     </div>
-    <div class="tally">Community: <b>${t.good}</b> worth it · <b>${t.meh}</b> meh · <b>${t.skip}</b> skip
-      <br><span style="font-size:11px">(shared across all visitors — your verdict is saved)</span></div>`;
+    <div class="tally">Community: <b>${t.good}</b> yes · <b>${t.meh}</b> 0 · <b>${t.skip}</b> no
+      <br><span style="font-size:11px">(shared across all visitors — your verdict is saved)</span></div>
+
+    <div class="community-section">
+      <h3>Community photos and notes</h3>
+      <div id="communityPhotos">${renderCommunityPhotos(communityPhotos)}</div>
+    </div>
+
+    <div class="community-section">
+      <h3>Share your experience</h3>
+      <div class="upload-box">
+        <div class="photo-note">Add up to 5 photos. Optional description up to 300 characters. Contributions wait for approval.</div>
+        <input id="userPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+        <div id="userPhotoSelectedCount" class="word-count">No photos selected.</div>
+        <textarea id="userPhotoDesc" placeholder="Optional description, max 300 characters"></textarea>
+        <div id="userPhotoWordCount" class="word-count">0 / 300 characters</div>
+        <button type="button" id="roadUploadButton">Upload photos / description</button>
+        <div id="roadUploadStatus" class="photo-note">No upload yet.</div>
+      </div>
+    </div>`;
 
   // Translate button handler: translates BOTH the title and the description.
   if (showTranslate) {
@@ -1609,6 +2219,8 @@ async function openDetail(poiId) {
     };
   }
 
+  wireContributionControls(s);
+
     $('v-good').onclick = async () => { await saveVerdict(poiId,'good'); openDetail(poiId); };
     $('v-meh').onclick  = async () => { await saveVerdict(poiId,'meh');  openDetail(poiId); };
     $('v-skip').onclick = async () => { await saveVerdict(poiId,'skip'); openDetail(poiId); };
@@ -1623,6 +2235,27 @@ $('back').onclick = () => {
 document.querySelectorAll('.style-btn').forEach(btn => {
   btn.onclick = () => switchMapStyle(btn.dataset.style);
 });
+
+/* Predictive country/place search wiring */
+if ($('countrySearch')) {
+  $('countrySearch').addEventListener('input', scheduleCountrySuggestions);
+  $('countrySearch').addEventListener('focus', () => showCountrySuggestions($('countrySearch').value));
+  $('countrySearch').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const first = $('countrySuggestions')?.querySelector('button');
+      if (first) first.click();
+      else setCountry($('countrySearch').value.trim() || 'Worldwide');
+    }
+  });
+}
+if ($('from')) {
+  $('from').addEventListener('input', () => schedulePlaceSuggestions('from'));
+  $('from').addEventListener('keydown', e => { if (e.key === 'Enter') drawSelectedMode(); });
+}
+if ($('to')) {
+  $('to').addEventListener('input', () => schedulePlaceSuggestions('to'));
+  $('to').addEventListener('keydown', e => { if (e.key === 'Enter') drawSelectedMode(); });
+}
 
 /* Category switches hide/show already-found stops without renumbering them. */
 document.querySelectorAll('.cat').forEach(cb => {
@@ -1666,6 +2299,7 @@ async function selectRoute(idx) {
     const selectedCategories = getSelectedCategories();
     currentStops = await corridorScan(route.geometry, widthKm, maxDetourKm, selectedCategories);
     trackEvent('route_search', 'route', {
+      country: currentCountry,
       from: $('from') ? $('from').value : null,
       to: $('to') ? $('to').value : null,
       width_km: widthKm,
@@ -1701,8 +2335,8 @@ async function showRoutesFromInputs() {
   routeWikiLang = null;   // reset; will be re-detected for the chosen route
   try {
     status('Finding start and destination…');
-    const from = await resolvePlace($('from').value);
-    const to   = await resolvePlace($('to').value);
+    const from = await resolvePlaceFromInput('from');
+    const to   = await resolvePlaceFromInput('to');
 
     status('Calculating routes…');
     currentRoutes = await getRoutes(from, to);
