@@ -1,292 +1,2436 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ScoutPlatform by Milos Savic</title>
-  <style>
-    :root{
-      --paper:#f4efe6; --panel:#fffdf8; --ink:#1c1a17;
-      --muted:#7f7465; --rule:#d8cfbe; --accent:#b5471f;
-      --blue:#075985; --green:#166534;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;font-family:Georgia,"Times New Roman",serif;background:var(--paper);color:var(--ink);line-height:1.55}
-    a{color:var(--accent);font-weight:bold;text-decoration:none}
-    a:hover{text-decoration:underline}
-    .wrap{max-width:1120px;margin:0 auto;padding:34px 18px 60px}
-    header{display:grid;grid-template-columns:1.2fr .8fr;gap:30px;align-items:center;margin-bottom:34px}
-    .hero,.status-card,.card{background:var(--panel);border:1px solid var(--rule);border-radius:22px;padding:26px;box-shadow:0 8px 24px rgba(0,0,0,.06)}
-    h1{margin:0 0 8px;font-size:44px;line-height:1.05}
-    h2{margin:0;font-size:30px;line-height:1.1}
-    h3{margin:0 0 8px;font-size:23px}
-    .tagline{font-size:20px;color:var(--muted);margin-bottom:18px}
-    .lead{font-size:17px;max-width:720px}
-    .badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:bold;letter-spacing:.4px;text-transform:uppercase;background:#dcfce7;color:var(--green);margin-bottom:12px}
-    .badge.planned{background:#e0f2fe;color:var(--blue)}
-    section{margin:34px 0}
-    .section-head{display:grid;grid-template-columns:300px 1fr;gap:28px;align-items:start;margin-bottom:14px}
-    .section-note{color:var(--muted);font-size:15px;margin-top:5px}
-    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-    .grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
-    .card p{margin:0 0 12px;color:#3c352c}
-    ul{padding-left:20px;margin:10px 0 0}
-    li{margin:5px 0}
-    .button-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-    .btn{display:inline-block;background:var(--accent);color:#fff;padding:10px 14px;border-radius:10px;font-weight:bold;text-decoration:none}
-    .btn:hover{text-decoration:none;background:#933619}
-    .btn.secondary{background:#6b7280}.btn.blue{background:#2563eb}
-    .legal-links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-    .legal-links a{display:block;background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:16px;color:var(--ink)}
-    .tech{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-    .tech span{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:10px;text-align:center;font-size:14px}
-    .highlight{background:linear-gradient(180deg,#fffdf8,#f6f1e6);border:2px solid var(--green);border-radius:22px;padding:26px;box-shadow:0 8px 24px rgba(0,0,0,.06)}
-    .highlight h3{font-size:26px}
-    .pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    .pill{background:#dcfce7;color:var(--green);border-radius:999px;padding:5px 12px;font-size:14px;font-weight:bold}
-    .pill.warn{background:#fee2e2;color:#9a4226}
-    .pill.mid{background:#ece7dc;color:#6b6151}
-    .caveat{color:var(--muted);font-size:14px;margin-top:14px;font-style:italic}
-    footer{border-top:1px solid var(--rule);margin-top:44px;padding-top:20px;color:var(--muted);font-size:14px}
-    @media(max-width:820px){
-      header,.section-head{grid-template-columns:1fr}
-      h1{font-size:34px}
-      .grid,.grid.three,.legal-links,.tech{grid-template-columns:1fr}
-      .wrap{padding:22px 12px 44px}
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>RoadScout — clean 200 debugged map version</title>
+
+<!-- ============================================================
+     EXTERNAL LIBRARIES (loaded from public CDNs, no install)
+     - MapLibre GL JS : the open-source map display engine
+     - Turf.js        : the geometry toolkit (buffer, point-in-polygon, etc.)
+     These are the only two big dependencies. Everything else is
+     plain browser JavaScript.
+     ============================================================ -->
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  /* ---- Theme tokens: change these to restyle the whole app ---- */
+  :root {
+    --ink:      #1c1a17;   /* near-black text */
+    --paper:    #f4efe6;   /* warm off-white background */
+    --panel:    #fffdf8;   /* card background */
+    --rule:     #d8cfbe;   /* hairline borders */
+    --accent:   #b5471f;   /* terracotta — buttons, route line */
+    --accent-2: #2f6b4f;   /* pine green — "worth it" */
+    --muted:    #8a7f6d;   /* dimmed labels */
+    --good:     #2f6b4f;
+    --meh:      #b8861b;
+    --skip:     #9a4226;
+    --shadow:   0 1px 0 rgba(0,0,0,.04), 0 8px 24px -12px rgba(60,40,20,.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    color: var(--ink);
+    background: var(--paper);
+    /* subtle paper grain via layered gradients */
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(181,71,31,.04), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(47,107,79,.04), transparent 40%);
+  }
+
+  /* ---- Layout: control panel on the left, map on the right ---- */
+  .app {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    height: 100vh;            /* fallback */
+    height: 100dvh;          /* real mobile viewport height */
+  }
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 1fr 320px; }
+    #map { order: 2; }
+  }
+
+  .panel {
+    overflow-y: auto;
+    padding: 26px 24px 60px;
+    border-right: 1px solid var(--rule);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  header h1 {
+    font-size: 30px;
+    margin: 0 0 2px;
+    letter-spacing: -0.5px;
+  }
+  header .tag {
+    color: var(--muted);
+    font-size: 14px;
+    font-style: italic;
+    margin-bottom: 22px;
+  }
+
+  /* ---- The route input form ---- */
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .field input {
+    width: 100%;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 15px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .field input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row .field { flex: 1; }
+
+  button.go {
+    width: 100%;
+    margin-top: 8px;
+    padding: 13px;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform .08s ease, filter .15s ease;
+  }
+  button.go:hover { filter: brightness(1.06); }
+  button.go:active { transform: translateY(1px); }
+  button.go:disabled { opacity: .5; cursor: progress; }
+
+  .controls-note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+
+  /* ---- Status / loading line ---- */
+  #status {
+    margin: 18px 0 4px;
+    font-size: 13px;
+    color: var(--muted);
+    min-height: 18px;
+  }
+
+  /* ---- The list of stops ---- */
+  .stops { list-style: none; margin: 14px 0 0; padding: 0; }
+  .stop {
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color .15s ease, transform .08s ease;
+    position: relative;
+  }
+  .stop:hover { border-color: var(--accent); }
+  .stop.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .stop .seq {
+    position: absolute; top: -9px; left: -9px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: 12px; font-weight: 700;
+    display: grid; place-items: center;
+  }
+  .stop h3 { margin: 0 0 3px; font-size: 16px; }
+  .stop .meta { font-size: 12px; color: var(--muted); }
+  .stop .kind {
+    display: inline-block; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--accent-2);
+    border: 1px solid var(--accent-2); border-radius: 3px;
+    padding: 1px 5px; margin-top: 6px;
+  }
+
+  /* ---- The detail panel: a simple show/hide block, NOT a sliding
+     overlay. When open it sits fixed over the left panel and fully
+     covers it; when closed it's display:none and the list is shown.
+     This avoids the stuck-transform bug the overlay version had. ---- */
+  .detail {
+    position: fixed; top: 0; left: 0; width: 420px;
+    height: 100vh;            /* fallback for older browsers */
+    height: 100dvh;           /* real visible height on mobile (fixes iOS Safari) */
+    background: var(--panel);
+    border-right: 1px solid var(--rule);
+    padding: 26px 24px;
+    /* extra bottom padding (plus iOS safe-area) so the verdict buttons are
+       never flush against / past the screen edge in portrait */
+    padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;   /* smooth momentum scroll on iOS */
+    z-index: 30;
+    box-shadow: var(--shadow);
+    display: none;            /* hidden by default */
+  }
+  .detail.open { display: block; }   /* shown when a stop is selected */
+  @media (max-width: 820px) { .detail { width: 100%; } }
+
+  .detail .back {
+    background: none; border: none; color: var(--accent);
+    font: inherit; font-size: 14px; cursor: pointer; padding: 0;
+    margin-bottom: 16px;
+  }
+  .detail h2 { margin: 0 0 6px; font-size: 24px; }
+  /* number badge next to the detail title, matching the map pins */
+  .num-badge {
+    display: inline-grid; place-items: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent-2); color: #fff;
+    font-size: 15px; font-weight: 700;
+    vertical-align: middle; margin-right: 6px;
+  }
+  .detail .summary { line-height: 1.6; font-size: 15px; margin: 14px 0; }
+  .detail img { width: 100%; border-radius: 8px; margin: 10px 0; }
+
+  /* ---- The verdict buttons (the ratings questionnaire) ---- */
+  .verdict-q { font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+               color: var(--muted); margin: 22px 0 8px; }
+  .verdicts { display: flex; gap: 8px; }
+  .verdicts button {
+    flex: 1; padding: 12px 6px; font: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--rule); border-radius: 8px; background: #fff;
+    cursor: pointer; transition: all .12s ease;
+  }
+  .verdicts button:hover { border-color: var(--ink); }
+  .verdicts button.sel-good { background: var(--good); color:#fff; border-color: var(--good); }
+  .verdicts button.sel-meh  { background: var(--meh);  color:#fff; border-color: var(--meh); }
+  .verdicts button.sel-skip { background: var(--skip); color:#fff; border-color: var(--skip); }
+
+  .tally { margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .tally b { color: var(--ink); }
+
+  #map { width: 100%; height: 100%; }
+  .maplibregl-marker { z-index: 40; }
+  .roadscout-pin { pointer-events: auto; }
+
+  /* Map style switcher (Streets / Outdoor / Satellite) */
+  #styleSwitcher {
+    position: absolute; top: 12px; right: 12px; z-index: 20;
+    display: flex; gap: 4px;
+    background: rgba(255,253,248,.9); padding: 4px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  .style-btn {
+    font: inherit; font-size: 12px; padding: 5px 10px;
+    border: none; border-radius: 5px; background: transparent;
+    color: var(--ink); cursor: pointer;
+  }
+  .style-btn:hover { background: rgba(0,0,0,.06); }
+  .style-btn.active { background: var(--accent); color: #fff; }
+
+
+  .category-panel {
+    margin-top: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: #fff;
+  }
+  .category-title {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .category-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 10px;
+    font-size: 13px;
+  }
+  .category-grid label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .category-grid input { accent-color: var(--accent); }
+
+
+  .location-panel {
+    border: 1px solid var(--accent-2);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 0 0 16px;
+    background: rgba(47,107,79,.08);
+  }
+  .location-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--accent-2);
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+  .location-copy { font-size: 13px; color: var(--muted); line-height: 1.45; margin-bottom: 10px; }
+
+  .mode-choice {
+    display: grid; gap: 8px; margin: 10px 0 12px; font-size: 14px;
+  }
+  .mode-choice label {
+    display: flex; gap: 8px; align-items: flex-start; line-height: 1.35;
+    padding: 8px; border: 1px solid rgba(47,107,79,.25); border-radius: 6px;
+    background: rgba(255,255,255,.55);
+  }
+  .mode-choice input { margin-top: 2px; }
+  .near-btn {
+    width: 100%; padding: 10px 12px; font: inherit; font-size: 14px; font-weight: 700;
+    color: #fff; background: var(--accent-2); border: none; border-radius: 7px; cursor: pointer;
+  }
+  .near-btn:hover { filter: brightness(1.06); }
+
+
+
+  /* ---- Predictive country/place search ---- */
+  .suggestion-box {
+    margin-top: 6px;
+    display: grid;
+    gap: 5px;
+  }
+  .suggestion-btn {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .suggestion-btn:hover {
+    border-color: var(--accent);
+    background: #fffaf1;
+  }
+
+  .empty { color: var(--muted); font-style: italic; margin-top: 20px; font-size: 14px; }
+
+  /* ---- Community contribution upload/gallery ---- */
+  .community-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+  }
+  .community-section h3 {
+    margin: 0 0 8px;
+    font-size: 17px;
+  }
+  .community-gallery {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin: 8px 0 12px;
+  }
+  .community-gallery img {
+    width: 100%;
+    max-height: 260px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin: 0;
+    background: #eee;
+  }
+  .community-description {
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 9px 10px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: #fff;
+    margin: 6px 0 8px;
+  }
+  .upload-box {
+    margin-top: 10px;
+    padding: 11px;
+    border: 1px dashed var(--rule);
+    border-radius: 8px;
+    background: #fffaf1;
+  }
+  .upload-box input,
+  .upload-box textarea {
+    width: 100%;
+    margin-top: 7px;
+    padding: 9px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    font: inherit;
+    font-size: 14px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .upload-box textarea {
+    min-height: 86px;
+    resize: vertical;
+  }
+  .upload-box button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent-2);
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .photo-note,
+  .word-count {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+    margin-top: 5px;
+  }
+  .no-photo {
+    text-align: center;
+    padding: 12px 6px;
+    background: #f8f3ea;
+    border: 1px dashed var(--rule);
+    border-radius: 8px;
+    margin: 8px 0;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+</style>
 </head>
+
 <body>
-  <div class="wrap">
+<div class="app">
+
+  <!-- ===================== LEFT: control panel ===================== -->
+  <div class="panel">
     <header>
-      <div class="hero">
-        <h1>ScoutPlatform</h1>
-        <div class="tagline">Simple exploration tools built with open data and community knowledge.</div>
-        <p class="lead">ScoutPlatform is an independent project by Milos Savic. Its applications help people discover useful and interesting places around the world through open geographic data, clear maps and responsible community contributions.</p>
-        <div class="button-row">
-          <a class="btn" href="https://milossavicgit.github.io/BeachScout/">Open BeachScout</a>
-          <a class="btn blue" href="https://play.google.com/store/apps/details?id=com.milossavic.beachscout">Get it on Google Play</a>
-          <a class="btn secondary" href="contact.html">Contact</a>
-        </div>
-      </div>
-      <div class="status-card">
-        <div class="badge">BeachScout 2.3 &mdash; live on Google Play</div>
-        <h3>New: dog-friendly beaches</h3>
-        <p>BeachScout now reads dog access straight from OpenStreetMap and shows it on the beach page, plus a whole-country map of every beach that records a dog rule. As far as we know, no other beach app does this.</p>
-        <ul>
-          <li>Dog access: allowed, on a lead, banned or seasonal</li>
-          <li>Country-wide maps for dog and naturist places</li>
-          <li>Accommodation within 3 km, with address and phone</li>
-          <li>Sea temperature, waves, wind and UV</li>
-          <li>Nearest public parking</li>
-        </ul>
-      </div>
+      <h1>RoadScout</h1>
+      <div class="tag">nearby 3 km search or Los Angeles → Santa Monica route</div>
     </header>
 
-    <section>
-      <div class="section-head">
-        <h2>What you can search</h2>
-        <div class="section-note">BeachScout started as a beach map. It has grown into a way of asking practical questions about a stretch of coast before you drive to it.</div>
+    <div class="location-panel" id="locationPanel">
+      <div class="location-title">Explore</div>
+      <div class="location-copy">Leave this off to use the default Los Angeles → Santa Monica route. Turn it on to ask for your location and draw a 3 km circle around you.</div>
+      <div class="mode-choice">
+        <label><input type="checkbox" id="useLocationToggle"> Use my location — 3 km circle</label>
       </div>
+    </div>
 
-      <div class="highlight">
-        <div class="badge">New in 2.3</div>
-        <h3>&#128021; Can I bring my dog?</h3>
-        <p>Most beach apps cannot answer this. BeachScout can, wherever a local mapper has recorded it. Open <strong>Dog beaches in this country</strong> and you get every beach in that country that states a rule, on one map, colour-coded:</p>
-        <div class="pill-row">
-          <span class="pill">Dogs allowed</span>
-          <span class="pill">Dedicated dog beach</span>
-          <span class="pill">On a lead</span>
-          <span class="pill warn">Dogs not allowed</span>
-          <span class="pill mid">Changes with the season</span>
-        </div>
-        <p style="margin-top:14px">Tap any dot for the full beach page: conditions, accommodation nearby, parking and coordinates. A ban is shown just as clearly as permission &mdash; knowing where you cannot go saves a wasted journey.</p>
-        <p class="caveat">Coverage depends entirely on what local mappers have recorded, and it is uneven. Germany, Croatia, Spain and the Netherlands are well mapped; many countries have almost nothing yet. A beach with no dog tag is not a beach that bans dogs &mdash; it is a beach nobody has recorded. BeachScout never guesses, and always tells you to check local signs.</p>
+    <!-- Country and route input. We accept "lat,lng" OR a place name (geocoded). -->
+    <div class="field">
+      <label>Country</label>
+      <input id="countrySearch" placeholder="Start typing country, e.g. Serbia" value="United States">
+      <div id="countrySuggestions" class="suggestion-box"></div>
+    </div>
+    <div class="field">
+      <label>From</label>
+      <input id="from" placeholder="e.g. Los Angeles, CA  or  34.0522,-118.2437" value="Los Angeles, CA" autocomplete="off">
+      <div id="fromSuggestions" class="suggestion-box"></div>
+    </div>
+    <div class="field">
+      <label>To</label>
+      <input id="to" placeholder="e.g. Santa Monica, CA  or  34.0195,-118.4912" value="Santa Monica, CA" autocomplete="off">
+      <div id="toSuggestions" class="suggestion-box"></div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Corridor width (km each side)</label>
+        <input id="width" type="number" value="1" min="0.5" max="20" step="0.5">
       </div>
+      <div class="field">
+        <label>Max detour (km off route)</label>
+        <input id="maxDetour" type="number" value="2" min="0.1" max="20" step="0.5">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Max attractions shown</label>
+        <input id="maxAttractions" type="number" value="200" min="20" max="1000" step="20">
+      </div>
+    </div>
+    <div class="category-panel">
+      <label class="category-title">Search categories</label>
+      <div class="category-grid" id="categoryGrid">
+        <label><input type="checkbox" class="cat" value="historic" checked> Historic sites <span style="color:var(--muted);font-size:11px">(important)</span></label>
+        <label><input type="checkbox" class="cat" value="heritage" checked> Heritage places</label>
+        <label><input type="checkbox" class="cat" value="museum" checked> Museums</label>
+        <label><input type="checkbox" class="cat" value="viewpoint" checked> Viewpoints</label>
+        <label><input type="checkbox" class="cat" value="attraction" checked> Attractions</label>
+        <label><input type="checkbox" class="cat" value="artwork" checked> Public art</label>
+        <label><input type="checkbox" class="cat" value="leisure_park" checked> Notable parks &amp; nature</label>
+        <label><input type="checkbox" class="cat" value="peak" checked> Peaks</label>
+        <label><input type="checkbox" class="cat" value="waterfall" checked> Waterfalls</label>
+        <label><input type="checkbox" class="cat" value="cave" checked> Caves</label>
+      </div>
+    </div>
+    <div class="controls-note" style="color:var(--accent);margin-top:6px">
+      ⚠ This cleaner version keeps art, history, heritage, and notable nature.
+      Ordinary city parks and universities are not included by default; results are capped at 200 unless you change the limit.
+    </div>
 
-      <div class="grid" style="margin-top:16px">
-        <div class="card">
-          <h3>&#128205; Detailed search</h3>
-          <p>Search 10 km around any town in the world, or 10 km around wherever you are standing.</p>
-          <ul>
-            <li>Beaches, lake and river swimming places</li>
-            <li>Naturist beaches, resorts and campsites</li>
-            <li>Beach resorts, lidos and swimming pools</li>
-            <li>Local names translated to English where the data allows</li>
-          </ul>
-        </div>
-        <div class="card">
-          <h3>&#127958; Naturist places, country by country</h3>
-          <p>The whole of a country's naturist coastline on one map, in the same colours the search uses.</p>
-          <ul>
-            <li>Official and customary naturist beaches</li>
-            <li>Naturist resorts, villages and campsites</li>
-            <li>Naturist swimming pools</li>
-            <li>Browse as a map or as a grouped list</li>
-          </ul>
-        </div>
-        <div class="card">
-          <h3>&#127754; Beach conditions</h3>
-          <p>What the water is doing today, at that beach, before you set off.</p>
-          <ul>
-            <li>Air and sea temperature</li>
-            <li>Wave height and wind</li>
-            <li>UV index and rain</li>
-            <li>Sunset time</li>
-          </ul>
-        </div>
-        <div class="card">
-          <h3>&#127976; Stay nearby and parking</h3>
-          <p>Practical detail for actually getting there and staying the night.</p>
-          <ul>
-            <li>Hotels, guest houses, apartments and campsites within 3 km</li>
-            <li>Full postal address in the local convention</li>
-            <li>Telephone number and official website</li>
-            <li>Nearest public parking, with walking directions</li>
-          </ul>
-        </div>
-      </div>
-    </section>
+    <button class="go" id="go">Show Attractions</button>
+    <div class="controls-note">
+      Uses free public services: OSRM for the route, OpenStreetMap (Overpass)
+      for points of interest, Wikipedia for descriptions. Uses public APIs plus the map/database keys already inside this prototype.
+    </div>
 
-    <section>
-      <div class="section-head">
-        <h2>Applications</h2>
-        <div class="section-note">Each Scout application uses the same platform idea, but focuses on a different type of place.</div>
-      </div>
-      <div class="grid">
-        <div class="card">
-          <div class="badge">Live &mdash; web and Android</div>
-          <h3>🏖 BeachScout</h3>
-          <p>Discover beaches, dog-friendly beaches, naturist beaches, swimming places, naturist resorts and campsites worldwide.</p>
-          <ul>
-            <li>Detailed 10 km search, worldwide</li>
-            <li>Search where you are standing</li>
-            <li>Dog access shown on every beach that records it</li>
-            <li>Country-wide dog and naturist maps</li>
-            <li>Sea conditions, accommodation and parking</li>
-            <li>Satellite and street maps</li>
-            <li>Community photos and descriptions</li>
-          </ul>
-          <div class="button-row">
-            <a class="btn" href="https://milossavicgit.github.io/BeachScout/">Launch BeachScout</a>
-            <a class="btn blue" href="https://play.google.com/store/apps/details?id=com.milossavic.beachscout">Get it on Google Play</a>
-          </div>
-        </div>
-        <div class="card">
-          <div class="badge planned">Upgrade planned</div>
-          <h3>🛣 RoadScout</h3>
-          <p>Discover cultural, historic and natural places along routes or near your current location.</p>
-          <ul>
-            <li>Route-based exploration</li>
-            <li>Cultural and natural discovery</li>
-            <li>OpenStreetMap and Wikimedia resources</li>
-            <li>Future ScoutPlatform upgrade planned</li>
-          </ul>
-          <div class="button-row">
-            <a class="btn" href="https://milossavicgit.github.io/RoadScout/">Launch RoadScout</a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <h2>Coming next</h2>
-        <div class="section-note">ScoutPlatform is designed to grow into a wider ecosystem of focused exploration tools.</div>
-      </div>
-      <div class="grid">
-        <div class="card">
-          <div class="badge planned">In development</div>
-          <h3>&#128663; ParkingScout</h3>
-          <p>A map of a city's parking that makes clear which of it is free &mdash; the question every driver actually has.</p>
-          <ul>
-            <li>Public car parks, garages and street parking</li>
-            <li>Free, paid and unknown shown honestly apart</li>
-            <li>Park-and-ride sites on the edge of the city</li>
-            <li>Capacity, opening hours and accessible spaces</li>
-          </ul>
-          <p class="caveat">Groundwork underway. Parking data has been measured across seven cities to establish where it is complete enough to be trusted. Unrecorded parking will never be shown as free.</p>
-        </div>
-        <div class="card">
-          <div class="badge planned">In development</div>
-          <h3>&#127976; HotelScout</h3>
-          <p>Accommodation along a route rather than at a single point &mdash; for the night you have not planned yet, somewhere between A and B.</p>
-          <ul>
-            <li>Search a whole route corridor, not just one town</li>
-            <li>Hotels, motels, guest houses and campsites</li>
-            <li>Full address, telephone and official website</li>
-            <li>Built on the same open data as BeachScout</li>
-          </ul>
-          <p class="caveat">An early web version exists and is being rebuilt on the BeachScout foundations.</p>
-        </div>
-        <div class="card">
-          <h3>⛰ MountainScout</h3>
-          <p>Mountains, viewpoints and trails, with the ascent and the season made plain.</p>
-        </div>
-        <div class="card">
-          <h3>🏛 HeritageScout</h3>
-          <p>Historic sites and cultural places, drawing on OpenStreetMap and Wikimedia.</p>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <h2>Launch information</h2>
-        <div class="section-note">Information required by users and app stores, kept current with the published Android release.</div>
-      </div>
-      <div class="legal-links">
-        <a href="privacy.html"><strong>Privacy Policy</strong><br>Explains location use, analytics, user uploads and data handling.</a>
-        <a href="terms.html"><strong>Terms of Use</strong><br>Rules for using BeachScout and contributing content.</a>
-        <a href="contact.html"><strong>Contact / Support</strong><br>Contact information for support, privacy requests and removal requests.</a>
-        <a href="data-deletion.html"><strong>Data Deletion</strong><br>How to request deletion of your personal data and user-submitted content.</a>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <h2>Community contributions</h2>
-        <div class="section-note">BeachScout is designed to become more useful as local users add knowledge.</div>
-      </div>
-      <div class="card">
-        <p>Users may contribute local beach information, including up to five photos and a short description of up to 300 characters. Contributions are reviewed before publication.</p>
-        <p>Contributors remain the owners of their photographs and descriptions. BeachScout receives permission only to store, moderate and display those contributions as part of the service.</p>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <h2>Open technologies</h2>
-        <div class="section-note">ScoutPlatform is built around accessible web technologies and open geographic data.</div>
-      </div>
-      <div class="tech">
-        <span>HTML</span><span>CSS</span><span>JavaScript</span><span>MapLibre</span>
-        <span>OpenStreetMap</span><span>Nominatim</span><span>Overpass API</span><span>Wikimedia</span>
-        <span>Supabase</span><span>GitHub Pages</span><span>Android WebView</span><span>Google Play</span>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <h2>About the creator</h2>
-        <div class="section-note">Independent project by Milos Savic.</div>
-      </div>
-      <div class="card">
-        <p>BeachScout and ScoutPlatform were created by Milos Savic. BeachScout began with a simple idea: to build a worldwide map useful to the naturist community, while also serving anyone looking for beaches and swimming places around the world.</p>
-        <p>The project is independent, community-oriented and built with the goal of remaining free or inexpensive to use.</p>
-      </div>
-    </section>
-
-    <footer>
-      <p>
-        <a href="privacy.html">Privacy Policy</a> ·
-        <a href="terms.html">Terms of Use</a> ·
-        <a href="contact.html">Contact</a> ·
-        <a href="data-deletion.html">Data Deletion</a>
-      </p>
-      <p>© 2026 Milos Savic / ScoutPlatform. BeachScout 2.3, live on web and Google Play.</p>
-      <p>Geographic names are used for practical search purposes and do not imply political positions.</p>
-    </footer>
+    <div id="status"></div>
+    <ul class="stops" id="stops"></ul>
+    <div class="empty" id="empty">Allow location for a 3 km nearby scan, or use the default Los Angeles → Santa Monica route.</div>
   </div>
+
+  <!-- ===================== detail overlay ===================== -->
+  <div class="detail" id="detail">
+    <button class="back" id="back">‹ back to the list</button>
+    <div id="detailBody"></div>
+  </div>
+
+  <!-- ===================== RIGHT: the map ===================== -->
+  <div id="map"></div>
+  <div id="styleSwitcher">
+    <button class="style-btn active" data-style="streets">Streets</button>
+    <button class="style-btn" data-style="outdoor">Outdoor</button>
+    <button class="style-btn" data-style="satellite">Satellite</button>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   ROADSCOUT — front end + corridor-scan engine, in one file.
+
+   The flow, in four stages (matches the architecture we discussed):
+     1. geocode + route   -> get the road path as a line of coordinates
+     2. corridor scan     -> find POIs near the path, sort by travel order
+     3. detail + rating   -> Wikipedia summary + tap a verdict
+     4. (alerts: native only — not in this web proof)
+
+   Ratings are stored in memory only here (a plain JS object). When you
+   add Supabase later, you swap the two functions saveVerdict()/getTally()
+   for calls to the database and nothing else changes.
+   ================================================================ */
+
+/* ---------- 0. Map setup (MapTiler tiles) ----------
+   We guard this: if the map library failed to load from the CDN
+   (offline, blocked, slow network), the app still works — you just
+   get the list without the visual map, instead of a blank crash. */
+
+// MapTiler API key. To change it, replace the string below.
+// (Public client-side key — fine to expose; restrict it to your domain
+//  in your MapTiler account settings when you go live, to protect quota.)
+const MAPTILER_KEY = 'L0PMr6QA6YPkhSS8n4Sv';
+
+// The three basemap styles offered via the switcher. "hybrid" = satellite + labels.
+const MAP_STYLES = {
+  streets:   `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`,
+  outdoor:   `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${MAPTILER_KEY}`,
+  satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`
+};
+let currentStyle = 'streets';   // default
+
+let map = null;
+const mapReady = (typeof maplibregl !== 'undefined');
+if (mapReady) {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: MAP_STYLES[currentStyle],
+    center: [-118.35, 34.03],
+    zoom: 10
+  });
+} else {
+  document.getElementById('map').innerHTML =
+    '<div style="display:grid;place-items:center;height:100%;color:#8a7f6d;' +
+    'font-style:italic;padding:30px;text-align:center">Map library didn\'t load ' +
+    '(check your connection) — the stop list below still works.</div>';
+}
+
+/* Turf is required for the scan itself. If it's missing, tell the user clearly. */
+const turfReady = (typeof turf !== 'undefined');
+
+/* ---------- Map style switcher ----------
+   Switching MapLibre's style WIPES any layers/sources we added (routes, pins),
+   so after the new style loads we re-draw whatever's currently on screen. */
+function whenMapStyleReady(fn) {
+  if (!mapReady || !map) return;
+
+  // map.isStyleLoaded() is the safest quick check. After setStyle(), the old
+  // global "load" event often will NOT fire again, so wait for style.load/idle.
+  if (map.isStyleLoaded()) {
+    fn();
+    return;
+  }
+
+  let done = false;
+  const runOnce = () => {
+    if (done) return;
+    if (!map.isStyleLoaded()) return;
+    done = true;
+    fn();
+  };
+
+  map.once('style.load', runOnce);
+  map.once('idle', runOnce);
+}
+
+function redrawMapContent() {
+  // Redraw BOTH things that MapLibre can lose/change around a style switch:
+  // 1) custom route sources/layers, and 2) numbered attraction DOM markers.
+  const visibleStops = getVisibleStops();
+
+  if (currentCircle) {
+    drawSearchCircle(currentCircle, { fit: false });
+  }
+
+  if (currentRoutes && currentRoutes.length) {
+    drawRoutes(currentRoutes, { fit: false });
+  }
+
+  // Draw the numbered circles immediately, then repeat shortly after.
+  // The repeats protect against MapLibre moving/rebuilding marker containers
+  // during a Streets/Outdoor/Satellite style change on slower browsers/phones.
+  drawPins(visibleStops);
+  setTimeout(() => drawPins(getVisibleStops()), 150);
+  setTimeout(() => drawPins(getVisibleStops()), 600);
+
+  renderList(visibleStops);
+  if (currentStops.length) {
+    const hidden = currentStops.length - visibleStops.length;
+    const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
+    status(`Showing ${visibleStops.length} of ${currentStops.length} stops${hidden ? ` (${hidden} hidden by category switches)` : ''}${langNote}.`);
+  }
+}
+
+function switchMapStyle(styleName) {
+  if (!mapReady || !map || !MAP_STYLES[styleName]) return;
+  currentStyle = styleName;
+
+  // Remove DOM markers before changing the basemap. MapLibre keeps DOM markers
+  // separate from style layers, but clearing them avoids duplicates while the
+  // new style is loading.
+  clearPins();
+
+  // IMPORTANT: setStyle() deletes every custom source/layer we added for the
+  // route. Some browsers still report isStyleLoaded() from the OLD style for a
+  // moment after setStyle(), so do NOT call whenMapStyleReady() immediately.
+  // Instead, wait for the NEW style events, then retry until the new style is
+  // definitely ready. The extra timed redraws make this robust on slow phones.
+  const redrawAfterNewStyle = () => {
+    const tryRedraw = () => {
+      if (!map || !map.isStyleLoaded()) {
+        setTimeout(tryRedraw, 100);
+        return;
+      }
+      redrawMapContent();
+    };
+    tryRedraw();
+  };
+
+  map.once('style.load', redrawAfterNewStyle);
+  map.once('idle', redrawAfterNewStyle);
+
+  map.setStyle(MAP_STYLES[styleName]);
+
+  // Fallbacks: if the style event fires oddly or too early, force redraw again.
+  setTimeout(redrawAfterNewStyle, 600);
+  setTimeout(redrawAfterNewStyle, 1400);
+  setTimeout(redrawAfterNewStyle, 2500);
+
+  // update which switcher button looks active
+  document.querySelectorAll('.style-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.style === styleName));
+}
+
+/* ---------- in-memory state ---------- */
+let currentStops = [];          // the scanned POIs, in route order
+let activeStopId = null;
+let currentRoutes = [];         // all alternative routes from OSRM
+let selectedRouteIdx = null;    // which route the user clicked to scan
+let routeWikiLang = null;       // local Wikipedia language for this route (e.g. 'de','sr')
+let currentMarkers = [];        // numbered map pins, kept so we can reliably remove/redraw them
+let currentCircle = null;        // GeoJSON circle for “near me” searches
+let currentSearchArea = null;    // current route corridor or nearby circle, used to reject wrong Wikipedia matches
+
+/* =====================================================================
+   SUPABASE — persistent, shared community verdicts
+   ===================================================================== */
+
+// Connection details (publishable key is safe to expose; it only grants what
+// the RLS policies allow, which is just public read + insert on verdicts).
+const SUPABASE_URL  = 'https://alvckuspgkjfxqlxikhl.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_ivjezOdTfRGWGGEuobn_mw_5hnya-Ux';
+
+// Initialize the Supabase client (guarded — if the library failed to load,
+// the app still runs, just without community verdicts).
+const supaReady = (typeof supabase !== 'undefined');
+const supa = supaReady ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+// Per-device anonymous identifier so we can recognize a user's own verdicts
+// (to highlight them in the UI) without requiring accounts. Generated once
+// per device and saved in localStorage — no signup, no tracking beyond this.
+function getUserToken() {
+  let t = localStorage.getItem('cm_user_token');
+  if (!t) {
+    t = 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('cm_user_token', t);
+  }
+  return t;
+}
+const USER_TOKEN = getUserToken();
+const APP_VERSION = 'v14_roadscout_user_photos';
+const ROAD_PHOTO_BUCKET = 'road-photos';
+const ROAD_PHOTO_TABLE = 'road_photos';
+
+// Tiny traffic counter. Fire-and-forget only: analytics must NEVER stop the map.
+function trackEvent(eventType, mode = null, details = {}) {
+  try {
+    if (!supaReady || !supa) return;
+    supa.from('roadscout_events').insert({
+      user_token: USER_TOKEN,
+      event_type: eventType,
+      app_version: APP_VERSION,
+      mode: mode,
+      details: details || {}
+    }).then(({ error }) => {
+      if (error) console.log('analytics insert error:', error.message);
+    }).catch(e => console.log('analytics failed:', e));
+  } catch (e) {
+    console.log('analytics skipped:', e);
+  }
+}
+
+// Cache of tallies keyed by place_id, populated by getTally on demand.
+// We don't fetch every place's tally up-front; we fetch on detail open.
+const tallyCache = {};
+
+// distinct colours for up to 3+ routes (selected one gets full opacity)
+const ROUTE_COLORS = ['#b5471f', '#2f6b4f', '#3a5a8c', '#8a5a2b', '#6b3a6b'];
+
+
+/* =====================================================================
+   PREDICTIVE COUNTRY AND PLACE SEARCH
+   Same behaviour as BeachScout: choose country first, then From/To
+   suggestions are restricted to that country. Worldwide searches globally.
+   ===================================================================== */
+const countryNames = ["Worldwide", "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Costa Rica", "Cote d'Ivoire", "Croatia", "Cuba", "Cyprus", "Czech Republic", "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Fiji", "Finland", "France", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Macedonia", "Norway", "Oman", "Pakistan", "Palau", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal", "Qatar", "Romania", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria", "Taiwan, China", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe", "Aruba", "Bermuda", "British Virgin Islands", "Cayman Islands", "Cook Islands", "Curaçao", "French Guiana", "French Polynesia", "Gibraltar", "Greenland", "Guadeloupe", "Guam", "Hong Kong", "Jersey", "Martinique", "Montserrat", "New Caledonia", "Puerto Rico", "Réunion", "Saint Martin", "Sint Maarten", "Turks and Caicos Islands", "U.S. Virgin Islands"];
+
+let currentCountry = 'United States';
+let countrySuggestTimer = null;
+let fromSuggestTimer = null;
+let toSuggestTimer = null;
+let placeSuggestToken = { from: 0, to: 0 };
+let selectedPlaceCache = { from: null, to: null };
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
+
+function nominatimCountryCode(country) {
+  const map = {
+    'Albania':'al','Australia':'au','Austria':'at','Belgium':'be','Brazil':'br',
+    'Bulgaria':'bg','Canada':'ca','China':'cn','Croatia':'hr','Cyprus':'cy',
+    'Denmark':'dk','France':'fr','Germany':'de','Greece':'gr','Italy':'it',
+    'Japan':'jp','Montenegro':'me','Netherlands':'nl','New Zealand':'nz',
+    'Portugal':'pt','Serbia':'rs','South Africa':'za','South Korea':'kr',
+    'Spain':'es','Thailand':'th','Turkey':'tr','United Kingdom':'gb',
+    'United States':'us','Taiwan, China':'tw','Mexico':'mx','Romania':'ro',
+    'Hungary':'hu','Slovenia':'si','Bosnia and Herzegovina':'ba','North Macedonia':'mk'
+  };
+  return map[country] || '';
+}
+
+function setCountry(name) {
+  currentCountry = name || 'Worldwide';
+  const input = $('countrySearch');
+  if (input) input.value = currentCountry;
+  const box = $('countrySuggestions');
+  if (box) box.innerHTML = '';
+  selectedPlaceCache.from = null;
+  selectedPlaceCache.to = null;
+  status(`Selected ${currentCountry}. Start typing From and To places.`);
+}
+
+function showCountrySuggestions(query) {
+  const box = $('countrySuggestions');
+  if (!box) return;
+  const q = String(query || '').trim().toLowerCase();
+  box.innerHTML = '';
+  if (!q) return;
+
+  const matches = countryNames
+    .filter(name => name.toLowerCase().includes(q))
+    .sort((a,b) => {
+      const al = a.toLowerCase(), bl = b.toLowerCase();
+      const ap = al.startsWith(q), bp = bl.startsWith(q);
+      if (ap && !bp) return -1;
+      if (!ap && bp) return 1;
+      return a.localeCompare(b);
+    })
+    .slice(0, 8);
+
+  if (!matches.length) {
+    box.innerHTML = '<div class="photo-note">No matching country.</div>';
+    return;
+  }
+
+  matches.forEach(name => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'suggestion-btn';
+    btn.textContent = name;
+    btn.onclick = () => setCountry(name);
+    box.appendChild(btn);
+  });
+}
+
+function scheduleCountrySuggestions() {
+  clearTimeout(countrySuggestTimer);
+  countrySuggestTimer = setTimeout(() => showCountrySuggestions($('countrySearch').value), 150);
+}
+
+function placeChoiceLabel(res) {
+  const a = res.address || {};
+  const main = a.city || a.town || a.village || a.hamlet || a.municipality || a.suburb || res.name || res.display_name || 'Unknown place';
+  const parts = [main, a.municipality, a.county, a.state || a.region, a.country].filter(Boolean);
+  const seen = new Set();
+  return parts.filter(part => {
+    const key = String(part).toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join(', ');
+}
+
+function shortPlaceLabel(res) {
+  const a = res.address || {};
+  const main = a.city || a.town || a.village || a.hamlet || a.municipality || a.county || res.name || res.display_name || 'Unknown place';
+  const region = a.state || a.region || a.county || a.province || '';
+  const country = a.country || '';
+  const parts = [main];
+  if (region && region !== main) parts.push(region);
+  if (country) parts.push(country);
+  const base = parts.filter(Boolean).join(', ');
+  const type = res.addresstype || res.type || res.class || '';
+  return type ? `${base} • ${type}` : base;
+}
+
+async function geocodePlaceOptions(query) {
+  const country = currentCountry || 'Worldwide';
+  const q = (country === 'Worldwide') ? query : `${query}, ${country}`;
+  const countryCode = country === 'Worldwide' ? '' : nominatimCountryCode(country);
+  let url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=1&q=${encodeURIComponent(q)}`;
+  if (countryCode) url += `&countrycodes=${encodeURIComponent(countryCode)}`;
+  const r = await fetch(url, { headers: { 'Accept': 'application/json', 'Accept-Language': 'en' } });
+  if (!r.ok) throw new Error('Place search failed');
+  let results = await r.json();
+
+  if (country && country !== 'Worldwide') {
+    const selected = country.toLowerCase().replace(', china', '');
+    results = (results || []).filter(res => {
+      const c = (res.address?.country || '').toLowerCase();
+      if (country === 'Taiwan, China') return c.includes('taiwan');
+      return c === selected || c.includes(selected);
+    });
+  }
+
+  return results || [];
+}
+
+function showPlaceSuggestions(fieldId, results) {
+  const box = $(fieldId + 'Suggestions');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!results || !results.length) {
+    box.innerHTML = '<div class="photo-note">No matching place found. Try a nearby larger town.</div>';
+    return;
+  }
+
+  results.forEach(res => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'suggestion-btn';
+    btn.textContent = shortPlaceLabel(res);
+    btn.title = res.display_name || btn.textContent;
+    btn.onclick = () => {
+      const label = placeChoiceLabel(res);
+      $(fieldId).value = label;
+      selectedPlaceCache[fieldId] = {
+        value: label,
+        lat: Number(res.lat),
+        lng: Number(res.lon),
+        display_name: res.display_name || label
+      };
+      box.innerHTML = '';
+    };
+    box.appendChild(btn);
+  });
+}
+
+function schedulePlaceSuggestions(fieldId) {
+  const input = $(fieldId);
+  const box = $(fieldId + 'Suggestions');
+  if (!input || !box) return;
+  clearTimeout(fieldId === 'from' ? fromSuggestTimer : toSuggestTimer);
+  const q = input.value.trim();
+  selectedPlaceCache[fieldId] = null;
+  if (q.length < 3) { box.innerHTML = ''; return; }
+  const token = ++placeSuggestToken[fieldId];
+  const timer = setTimeout(async () => {
+    try {
+      box.innerHTML = '<div class="photo-note">Finding matching places...</div>';
+      const results = await geocodePlaceOptions(q);
+      if (token !== placeSuggestToken[fieldId]) return;
+      showPlaceSuggestions(fieldId, results);
+    } catch(e) {
+      if (token !== placeSuggestToken[fieldId]) return;
+      box.innerHTML = '<div class="photo-note">Could not load suggestions. You can still press Show Attractions.</div>';
+    }
+  }, 500);
+  if (fieldId === 'from') fromSuggestTimer = timer;
+  else toSuggestTimer = timer;
+}
+
+function resolvePlaceFromInput(fieldId) {
+  const input = $(fieldId);
+  const text = input ? input.value.trim() : '';
+  const selected = selectedPlaceCache[fieldId];
+  if (selected && selected.value === text && Number.isFinite(selected.lat) && Number.isFinite(selected.lng)) {
+    return Promise.resolve({ lng: selected.lng, lat: selected.lat });
+  }
+  return resolvePlace(text);
+}
+
+
+// Search categories shown in the side panel. These build the Overpass query
+// and also label/filter each result after it is found.
+const CATEGORY_LABELS = {
+  historic: 'Historic site',
+  heritage: 'Heritage place',
+  museum: 'Museum',
+  viewpoint: 'Viewpoint',
+  attraction: 'Attraction',
+  artwork: 'Public art',
+  leisure_park: 'Notable parks & nature',
+  peak: 'Peak',
+  waterfall: 'Waterfall',
+  cave: 'Cave'
+};
+
+function getSelectedCategories() {
+  return [...document.querySelectorAll('.cat:checked')].map(x => x.value);
+}
+
+function overpassLinesForCategory(cat, s, w, n, e) {
+  const box = `(${s},${w},${n},${e});`;
+  const line = tag => `      node${tag}${box}\n      way${tag}${box}\n      relation${tag}${box}`;
+  if (cat === 'historic') return line('["historic"]');
+  if (cat === 'heritage') return line('["heritage"]');
+  if (cat === 'museum') return line('["tourism"="museum"]');
+  if (cat === 'viewpoint') return line('["tourism"="viewpoint"]');
+  if (cat === 'attraction') return line('["tourism"="attraction"]');
+  if (cat === 'artwork') return line('["tourism"="artwork"]');
+  if (cat === 'leisure_park') return [
+    // IMPORTANT: ordinary city parks are intentionally NOT queried here.
+    // Keep only heritage/historic parks, named protected areas, nature reserves,
+    // national parks, and parks that already have Wikipedia/Wikidata tags.
+    line('["historic"~"park|garden"]'),
+    line('["boundary"~"protected_area|national_park"]'),
+    line('["leisure"="nature_reserve"]'),
+    line('["protect_class"]'),
+    line('["leisure"="park"]["wikidata"]'),
+    line('["leisure"="park"]["wikipedia"]'),
+    line('["leisure"="garden"]["wikidata"]'),
+    line('["leisure"="garden"]["wikipedia"]'),
+    line('["tourism"="theme_park"]')
+  ].join('\n');
+  if (cat === 'peak') return line('["natural"="peak"]');
+  if (cat === 'waterfall') return line('["natural"="waterfall"]');
+  if (cat === 'cave') return line('["natural"="cave_entrance"]');
+  return '';
+}
+
+function categoryForTags(tags) {
+  // Heritage/historic parks should be classified as notable nature before
+  // generic historic, so Kalemegdan-style parks stay in the nature bucket.
+  if (['park','garden'].includes(tags.historic)) return 'leisure_park';
+  if (
+    tags.leisure === 'nature_reserve' ||
+    ['protected_area','national_park'].includes(tags.boundary) ||
+    tags.protect_class ||
+    tags.tourism === 'theme_park' ||
+    ((tags.leisure === 'park' || tags.leisure === 'garden') && (tags.wikidata || tags.wikipedia))
+  ) return 'leisure_park';
+
+  if (tags.historic) return 'historic';
+  if (tags.heritage) return 'heritage';
+  if (tags.tourism === 'museum') return 'museum';
+  if (tags.tourism === 'viewpoint') return 'viewpoint';
+  if (tags.tourism === 'attraction') return 'attraction';
+  if (tags.tourism === 'artwork') return 'artwork';
+  if (tags.natural === 'peak') return 'peak';
+  if (tags.natural === 'waterfall') return 'waterfall';
+  if (tags.natural === 'cave_entrance') return 'cave';
+  return 'attraction';
+}
+
+
+// Importance filtering for noisy categories. Historic sites, parks, and universities can return
+// hundreds of small/local features, so we keep the ones that are more useful to
+// travellers: notable items (Wikipedia/Wikidata), major monuments/ruins/castles/memorials,
+// major parks/reserves, and main university campuses. Everything else keeps the old behaviour.
+function normalizedName(name) {
+  return (name || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isFacultyLikeName(name) {
+  const n = normalizedName(name);
+  return /\b(faculty|school|department|dept|institute|institut|fakultet|fakulteta|college|campus|building|hall|library|laboratory|lab|center|centre)\b/.test(n);
+}
+
+function universityScore(stop) {
+  const tags = stop.tags || {};
+  const n = normalizedName(stop.name);
+  let score = 0;
+  if (stop.wikidata || stop.wikipedia) score += 5;
+  if (tags.website || tags.url) score += 1;
+  if (/\buniversity\b|\buniverzitet\b|\begyetem\b|\bucla\b|\busc\b/.test(n)) score += 3;
+  if (isFacultyLikeName(stop.name)) score -= 4;
+  // Small named faculties with no wiki link are usually clutter for travellers.
+  return score;
+}
+
+function parkScore(stop) {
+  const tags = stop.tags || {};
+  const n = normalizedName(stop.name);
+  let score = 0;
+
+  // Strong notability signals.
+  if (stop.wikidata || stop.wikipedia) score += 6;
+  if (tags.tourism === 'attraction') score += 4;
+  if (tags.boundary === 'national_park') score += 5;
+  if (tags.boundary === 'protected_area' || tags.protect_class) score += 4;
+  if (tags.leisure === 'nature_reserve') score += 4;
+  if (tags.historic === 'park' || tags.historic === 'garden') score += 4;
+
+  // Medium signals: often destination parks/gardens.
+  if (tags.leisure === 'park') score += 2;
+  if (tags.leisure === 'garden') score += 2;
+  if (tags.tourism === 'theme_park') score += 5;
+  if (tags.tourism === 'picnic_site') score += 1;
+  if (tags.landuse === 'forest' || tags.natural === 'wood') score += 2;
+
+  // Name signals for destination places, including local-language words.
+  if (/\b(national|regional|state|city|central|botanical|historic|memorial|island|fortress|castle|arboretum|zoo|nature|reserve|park prirode|gradski|varosliget|margaret|kalemegdan|griffith|palisades)\b/.test(n)) score += 2;
+
+  // Usually too small or too local for this product.
+  if (tags.leisure === 'dog_park') score -= 5;
+  if (/\b(dog|playground|pocket|mini|tiny|small|children|kids|tot lot|community garden)\b/.test(n)) score -= 4;
+  if (tags.access === 'private') score -= 4;
+
+  return score;
+}
+
+function historicScore(stop) {
+  const tags = stop.tags || {};
+  const n = normalizedName(stop.name);
+  let score = 0;
+
+  // Strong notability signals. If OSM has Wikidata/Wikipedia, it is usually a real destination.
+  if (stop.wikidata || stop.wikipedia) score += 6;
+  if (tags.tourism === 'attraction') score += 4;
+  if (tags.heritage || tags['heritage:operator'] || tags['ref:whc']) score += 4;
+
+  // Historic types that are usually interesting to travellers.
+  const h = tags.historic || '';
+  if (['castle','fort','fortress','city_gate','archaeological_site','ruins','monument','memorial','battlefield','tower','citywalls','wayside_cross','manor','palace','building','church','monastery','synagogue','mosque'].includes(h)) score += 3;
+  if (['castle','fort','fortress','archaeological_site','ruins','monument','memorial','battlefield','tower','palace','monastery'].includes(h)) score += 2;
+
+  // Name signals for larger historic destinations and local-language terms.
+  if (/\b(castle|fortress|fort|palace|monument|memorial|museum|ruins|archaeological|ancient|historic|old town|old city|citadel|tower|gate|walls|monastery|abbey|cathedral|church|kalemegdan|budavari|buda castle|var|grad|tvrdjava|spomenik|palata)\b/.test(n)) score += 2;
+
+  // Often too small/noisy when returned in bulk. Keep only if they have a wiki/heritage signal.
+  if (['plaque','blue_plaque','marker','wayside_shrine','milestone','boundary_stone'].includes(h)) score -= 4;
+  if (/\b(plaque|marker|memorial plaque|bench|stone|small|former site|birthplace|house number|wayside|milestone)\b/.test(n)) score -= 3;
+  if (tags.access === 'private') score -= 3;
+
+  return score;
+}
+
+function filterNoisyCategories(stops) {
+  const kept = [];
+  const seenUniversityRoots = new Set();
+  const seenParkNames = new Set();
+
+  for (const stop of stops) {
+    if (stop.category === 'historic') {
+      const score = historicScore(stop);
+      // Keep major/notable historic places; drop minor plaques/markers and tiny private objects.
+      // Wikipedia/Wikidata, heritage tags, monuments, castles, forts, ruins, memorials, etc. pass.
+      if (score < 4) continue;
+      stop.importanceScore = score;
+      kept.push(stop);
+      continue;
+    }
+
+    if (stop.category === 'leisure_park') {
+      const score = parkScore(stop);
+      // Keep important parks/nature; drop small local greens. Wikipedia/Wikidata
+      // almost always passes this threshold, so places like Kalemegdan are kept.
+      if (score < 4) continue;
+      const root = normalizedName(stop.name);
+      if (seenParkNames.has(root)) continue;
+      seenParkNames.add(root);
+      stop.importanceScore = score;
+      kept.push(stop);
+      continue;
+    }
+
+    kept.push(stop);
+  }
+
+  return kept;
+}
+
+
+function stopPriority(stop) {
+  let score = stop.importanceScore || 0;
+  if (stop.wikidata || stop.wikipedia) score += 8;
+  if (stop.category === 'heritage') score += 6;
+  if (stop.category === 'museum') score += 5;
+  if (stop.category === 'artwork') score += 3;
+  if (stop.category === 'historic') score += 3;
+  if (stop.category === 'leisure_park') score += 3;
+  if (stop.category === 'peak' || stop.category === 'waterfall' || stop.category === 'cave') score += 2;
+  return score;
+}
+
+function capAttractions(stops, maxAttractions, sortKey = 'alongKm') {
+  const cap = parseInt(maxAttractions, 10);
+  if (!cap || cap < 1 || stops.length <= cap) return stops;
+
+  // Keep the most important places first, then prefer closer-to-route / closer-to-user.
+  const selected = [...stops]
+    .sort((a, b) => {
+      const byScore = stopPriority(b) - stopPriority(a);
+      if (byScore) return byScore;
+      return (a.detourKm || 0) - (b.detourKm || 0);
+    })
+    .slice(0, cap);
+
+  // Put the selected set back in natural order for display.
+  selected.sort((a, b) => (a[sortKey] || 0) - (b[sortKey] || 0));
+  return selected;
+}
+
+/* ---------- tiny helpers ---------- */
+const $ = id => document.getElementById(id);
+const status = msg => { $('status').textContent = msg; };
+
+/* Accept either "lat,lng" typed directly, or a place name we geocode. */
+async function resolvePlace(text) {
+  const clean = String(text || '').trim();
+  const m = clean.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  if (m) return { lng: parseFloat(m[2]), lat: parseFloat(m[1]) };
+
+  // Geocode with Nominatim. If a country has been selected, restrict search to it.
+  const country = currentCountry || 'Worldwide';
+  const q = (country === 'Worldwide') ? clean : `${clean}, ${country}`;
+  const countryCode = country === 'Worldwide' ? '' : nominatimCountryCode(country);
+  let url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=${encodeURIComponent(q)}`;
+  if (countryCode) url += `&countrycodes=${encodeURIComponent(countryCode)}`;
+
+  const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+  const j = await r.json();
+  if (!j.length) throw new Error(`Couldn't find "${clean}"`);
+  return { lng: parseFloat(j[0].lon), lat: parseFloat(j[0].lat) };
+}
+
+/* Map a 2-letter ISO country code to the Wikipedia language edition most
+   useful there. A code not listed simply falls back to English (always tried).
+   One country -> one default language; multilingual countries get the most
+   broadly useful one. Extend or adjust any line freely. */
+const COUNTRY_TO_WIKILANG = {
+  // Europe
+  rs:'sr', de:'de', at:'de', ch:'de', li:'de', fr:'fr', mc:'fr',
+  it:'it', sm:'it', va:'it', es:'es', ad:'ca', pt:'pt', nl:'nl',
+  be:'nl', lu:'fr', gb:'en', ie:'en', is:'is', no:'no', se:'sv',
+  dk:'da', fi:'fi', ee:'et', lv:'lv', lt:'lt', pl:'pl', cz:'cs',
+  sk:'sk', hu:'hu', si:'sl', hr:'hr', ba:'bs', me:'sr', mk:'mk',
+  al:'sq', gr:'el', bg:'bg', ro:'ro', md:'ro', ua:'uk', by:'be',
+  ru:'ru', tr:'tr', cy:'el', mt:'mt',
+  // Middle East & Central Asia
+  il:'he', sa:'ar', ae:'ar', eg:'ar', jo:'ar', lb:'ar', sy:'ar',
+  iq:'ar', kw:'ar', qa:'ar', om:'ar', ye:'ar', ir:'fa', af:'fa',
+  pk:'ur', kz:'kk', uz:'uz', az:'az', ge:'ka', am:'hy',
+  // South & East Asia
+  in:'hi', bd:'bn', lk:'si', np:'ne', cn:'zh', tw:'zh', hk:'zh',
+  jp:'ja', kr:'ko', th:'th', vn:'vi', kh:'km', la:'lo', mm:'my',
+  my:'ms', id:'id', ph:'tl', sg:'en', mn:'mn',
+  // Africa
+  za:'en', ng:'en', ke:'sw', tz:'sw', et:'am', ma:'ar', tn:'ar',
+  dz:'ar', ly:'ar', sd:'ar', gh:'en', ug:'en',
+  // Americas
+  us:'en', ca:'en', mx:'es', br:'pt', ar:'es', cl:'es', co:'es',
+  pe:'es', ve:'es', ec:'es', bo:'es', py:'es', uy:'es', cu:'es',
+  do:'es', gt:'es', cr:'es', pa:'es', ht:'fr',
+  // Oceania
+  au:'en', nz:'en', fj:'en'
+  // anything not listed -> English fallback (always tried regardless)
+};
+
+/* Reverse-geocode a coordinate to a country code, then pick its Wikipedia
+   language. Returns null if it can't tell (we then just use English). */
+async function detectWikiLang(lng, lat) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json` +
+                `&lat=${lat}&lon=${lng}&zoom=3`;
+    const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    const j = await r.json();
+    const cc = j?.address?.country_code;        // e.g. "de"
+    if (!cc) return null;
+    return COUNTRY_TO_WIKILANG[cc] || null;     // mapped language, or null -> English only
+  } catch {
+    return null;
+  }
+}
+
+/* =====================================================================
+   STAGE 1 — get the route(s). We now ask OSRM for ALTERNATIVES, so it
+   returns up to a few different paths instead of just the best one.
+   Returns an ARRAY of routes; each has .geometry and .distance (metres).
+   Note: OSRM's free engine usually gives 1–3 alternatives, sometimes
+   only one if the roads don't offer a genuinely different path.
+   ===================================================================== */
+async function getRoutes(from, to) {
+  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}` +
+              `?overview=full&geometries=geojson&alternatives=true`;
+  const r = await fetch(url);
+  const j = await r.json();
+  if (!j.routes || !j.routes.length) throw new Error('No route found.');
+  return j.routes;   // array of route objects
+}
+
+/* =====================================================================
+   STAGE 2 — THE CORRIDOR SCAN. This is the heart of the whole thing.
+
+   Steps:
+     a) buffer the route line into a corridor polygon
+     b) ask Overpass for POIs inside the corridor's bounding box
+     c) keep only POIs actually inside the corridor polygon
+     d) for each survivor, find its distance ALONG the route
+        -> that single number gives us travel order + detour distance
+     e) sort by along-route distance
+   ===================================================================== */
+async function corridorScan(routeLine, widthKm, maxDetourKm, selectedCategories) {
+  // (a) build the corridor polygon around the route
+  const corridor = turf.buffer(routeLine, widthKm, { units: 'kilometers' });
+  currentSearchArea = corridor;
+
+  // (b) bounding box for the Overpass query (Overpass searches a box)
+  const [w, s, e, n] = turf.bbox(corridor);
+
+  const cats = selectedCategories && selectedCategories.length
+    ? selectedCategories
+    : getSelectedCategories();
+  if (!cats.length) throw new Error('Switch on at least one search category.');
+
+  // The Overpass query is now built from the category switches in the side panel.
+  const categoryLines = cats.map(cat => overpassLinesForCategory(cat, s, w, n, e))
+                            .filter(Boolean).join('\n');
+
+  // TIMEOUT 1 (server-side): how long Overpass may spend computing. Raised to 120s
+  // so larger corridors have a chance to finish. Note the public server has its
+  // own internal caps, so very large queries may still be refused regardless.
+  const query = `
+    [out:json][timeout:120];
+    (
+${categoryLines}
+    );
+    out center;
+  `;
+
+  // TIMEOUT 2 (client-side): fetch() has no timeout by default, so a stalled
+  // request would hang forever. AbortController cancels it after 125s (just
+  // past the server's 120s) so we fail cleanly with a message instead of spinning.
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 125000);
+
+  let j;
+  try {
+    const r = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: query, signal: controller.signal
+    });
+    if (!r.ok) throw new Error(`the search was too large (server returned ${r.status}). Try a narrower corridor or a shorter route.`);
+    j = await r.json();
+  } catch (err) {
+    clearTimeout(abortTimer);
+    if (err.name === 'AbortError') {
+      throw new Error('The attraction search timed out — try a shorter route or a narrower corridor width.');
+    }
+    throw new Error('Attraction search failed: ' + err.message);
+  }
+  clearTimeout(abortTimer);
+
+  const totalLen = turf.length(routeLine, { units: 'kilometers' });
+  const results = [];
+
+  for (const el of j.elements) {
+    if (!el.tags) continue;
+    const placeName = el.tags.name || el.tags['name:en'] || el.tags.int_name || el.tags.official_name;
+    if (!placeName) continue;            // skip unnamed clutter
+
+    // Nodes have lat/lon directly; ways/relations (buildings) have their
+    // coordinate in el.center (because we used "out center"). Handle both.
+    const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    const lon = el.lon != null ? el.lon : (el.center && el.center.lon);
+    if (lat == null || lon == null) continue;           // no usable coordinate
+    const pt = turf.point([lon, lat]);
+
+    // (c) is it really inside the corridor (not just the loose box)?
+    if (!turf.booleanPointInPolygon(pt, corridor)) continue;
+
+    // (d) project onto the route: nearestPointOnLine gives us 'location'
+    //     = distance along the route in km, plus 'dist' = detour distance.
+    const snap = turf.nearestPointOnLine(routeLine, pt, { units: 'kilometers' });
+
+    // (d2) MAX DETOUR FILTER: skip anything farther off the road than the
+    //      user's limit. snap.properties.dist is the straight-line detour in km.
+    if (snap.properties.dist > maxDetourKm) continue;
+
+    const category = categoryForTags(el.tags);
+
+    results.push({
+      id: `${el.type}/${el.id}`,
+      name: placeName,
+      lat: lat, lng: lon,
+      category: category,
+      kind: CATEGORY_LABELS[category] || el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
+      alongKm: snap.properties.location,     // <-- sort key (travel order)
+      detourKm: snap.properties.dist,        // <-- how far off the route
+      progress: snap.properties.location / totalLen,
+      // OSM's precise links to the right article (when a mapper added them).
+      // wikidata is a language-neutral ID (e.g. "Q12345"); wikipedia is like
+      // "en:Park Imperial" (language prefix + exact title). Either one lets us
+      // fetch the CORRECT article instead of guessing by name.
+      wikidata: el.tags.wikidata || null,
+      wikipedia: el.tags.wikipedia || null,
+      // address tags, if present, for display / sanity-checking location
+      addr: [el.tags['addr:housenumber'], el.tags['addr:street'],
+             el.tags['addr:city']].filter(Boolean).join(' ') || null,
+      tags: el.tags
+    });
+  }
+
+  // (e) sort by position along the route -> the list comes out in travel order
+  results.sort((a, b) => a.alongKm - b.alongKm);
+
+  // light dedup: drop near-identical names within 1km of each other
+  const deduped = [];
+  for (const p of results) {
+    const dup = deduped.find(q => q.name === p.name && Math.abs(q.alongKm - p.alongKm) < 1);
+    if (!dup) deduped.push(p);
+  }
+
+  const filtered = capAttractions(filterNoisyCategories(deduped), $('maxAttractions') ? $('maxAttractions').value : 200, 'alongKm');
+
+  // Give every kept point a permanent route-order number. If categories are
+  // switched on/off later, the visible list may have gaps, but each feature keeps
+  // its original number from the full scan.
+  filtered.forEach((p, i) => p.displayNum = i + 1);
+
+  return filtered;
+}
+
+async function circleScan(centerLng, centerLat, radiusKm, selectedCategories) {
+  const center = turf.point([centerLng, centerLat]);
+  const searchCircle = turf.circle(center, radiusKm, { steps: 96, units: 'kilometers' });
+  currentSearchArea = searchCircle;
+  const [w, s, e, n] = turf.bbox(searchCircle);
+
+  const cats = selectedCategories && selectedCategories.length
+    ? selectedCategories
+    : getSelectedCategories();
+  if (!cats.length) throw new Error('Switch on at least one search category.');
+
+  const categoryLines = cats.map(cat => overpassLinesForCategory(cat, s, w, n, e))
+                            .filter(Boolean).join('\n');
+
+  const query = `
+    [out:json][timeout:120];
+    (
+${categoryLines}
+    );
+    out center;
+  `;
+
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 125000);
+
+  let j;
+  try {
+    const r = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: query, signal: controller.signal
+    });
+    if (!r.ok) throw new Error(`the search was too large (server returned ${r.status}). Try switching off some categories.`);
+    j = await r.json();
+  } catch (err) {
+    clearTimeout(abortTimer);
+    if (err.name === 'AbortError') {
+      throw new Error('The nearby attraction search timed out — try switching off some categories.');
+    }
+    throw new Error('Nearby attraction search failed: ' + err.message);
+  }
+  clearTimeout(abortTimer);
+
+  const results = [];
+  for (const el of j.elements) {
+    if (!el.tags) continue;
+    const placeName = el.tags.name || el.tags['name:en'] || el.tags.int_name || el.tags.official_name;
+    if (!placeName) continue;
+    const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    const lon = el.lon != null ? el.lon : (el.center && el.center.lon);
+    if (lat == null || lon == null) continue;
+
+    const pt = turf.point([lon, lat]);
+    if (!turf.booleanPointInPolygon(pt, searchCircle)) continue;
+
+    const distKm = turf.distance(center, pt, { units: 'kilometers' });
+    if (distKm > radiusKm) continue;
+
+    const category = categoryForTags(el.tags);
+    results.push({
+      id: `${el.type}/${el.id}`,
+      name: placeName,
+      lat: lat, lng: lon,
+      category: category,
+      kind: CATEGORY_LABELS[category] || el.tags.historic || el.tags.heritage || el.tags.tourism || el.tags.natural || 'point of interest',
+      alongKm: distKm,
+      detourKm: distKm,
+      nearbyMode: true,
+      progress: 0,
+      wikidata: el.tags.wikidata || null,
+      wikipedia: el.tags.wikipedia || null,
+      addr: [el.tags['addr:housenumber'], el.tags['addr:street'],
+             el.tags['addr:city']].filter(Boolean).join(' ') || null,
+      tags: el.tags
+    });
+  }
+
+  results.sort((a, b) => a.detourKm - b.detourKm);
+
+  const deduped = [];
+  for (const p of results) {
+    const dup = deduped.find(q => q.name === p.name && Math.abs(q.detourKm - p.detourKm) < 0.2);
+    if (!dup) deduped.push(p);
+  }
+  const filtered = capAttractions(filterNoisyCategories(deduped), $('maxAttractions') ? $('maxAttractions').value : 200, 'detourKm');
+  filtered.forEach((p, i) => p.displayNum = i + 1);
+  return { stops: filtered, circle: searchCircle };
+}
+
+/* =====================================================================
+   STAGE 3a — enrichment: fetch a short Wikipedia summary + image.
+   Called lazily when the user opens a stop's detail panel.
+
+   TWO-TIER STRATEGY:
+   Tier 1 (RELIABLE): if OSM gave us a precise link — a `wikipedia` tag
+     (e.g. "en:Park Imperial") or a `wikidata` ID (e.g. "Q12345") — follow
+     it to the EXACT correct article. No guessing, no wrong-article bugs.
+   Tier 2 (FALLBACK): if there's no such tag, fall back to name-SEARCH in
+     the local language then English. This is the fuzzy path that can
+     occasionally match the wrong article (the "Park Imperial -> Beijing"
+     problem), so it's only used when we have no precise link.
+   ===================================================================== */
+
+/* Fetch a summary for an EXACT article title in a given language.
+   Also returns the article's own coordinates (when Wikipedia has them),
+   so callers can sanity-check that a searched match is in the right place. */
+async function fetchByTitle(title, lang) {
+  try {
+    const url = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j.extract) return null;
+    // Wikipedia's summary includes coordinates for articles about places.
+    const coord = j.coordinates ? { lat: j.coordinates.lat, lng: j.coordinates.lon } : null;
+    return { text: j.extract, img: j.thumbnail ? j.thumbnail.source : null,
+             title: j.title || title, lang, exact: true, coord };
+  } catch { return null; }
+}
+
+/* Resolve a Wikidata ID (e.g. "Q12345") to a Wikipedia article + summary.
+   Wikidata stores sitelinks to every language Wikipedia; we prefer the
+   local language, then English. This is the most precise source of all. */
+async function fetchByWikidata(qid, preferLang) {
+  try {
+    const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(qid)}` +
+                `&props=sitelinks&format=json&origin=*`;
+    const r = await fetch(url);
+    const j = await r.json();
+    const links = j?.entities?.[qid]?.sitelinks;
+    if (!links) return null;
+    // try local-language wiki first, then English
+    const order = [];
+    if (preferLang && preferLang !== 'en') order.push(preferLang + 'wiki');
+    order.push('enwiki');
+    for (const key of order) {
+      if (links[key]) {
+        const lang = key.replace('wiki', '');
+        const res = await fetchByTitle(links[key].title, lang);
+        if (res) return res;
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
+/* Tier 2 fallback: SEARCH one Wikipedia language edition by name and return
+   the top hit. No location check — we accept whatever search finds, which
+   maximizes coverage (lesser-known places, sparsely-tagged regions) at the
+   cost of an occasional wrong-place / wrong-concept match. Tier 1 (OSM tags)
+   remains reliable; this looseness only applies to untagged places. */
+async function fetchFromWiki(name, lang, stopLat, stopLng, maxKm) {
+  try {
+    const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search` +
+      `&srsearch=${encodeURIComponent(name)}&format=json&origin=*&srlimit=1`;
+    const sr = await fetch(searchUrl);
+    const sj = await sr.json();
+    const hit = sj?.query?.search?.[0];
+    if (!hit) return null;
+    const res = await fetchByTitle(hit.title, lang);
+    if (!res) return null;
+    res.exact = false;   // mark as a fuzzy (search) match
+    return res;
+  } catch (e) {
+    console.log(`wiki(${lang}) failed for`, name, e);
+    return null;
+  }
+}
+
+/* Translate text to English using Google Translate's free, KEYLESS endpoint.
+   NOTE: this is an UNOFFICIAL, undocumented endpoint — it works and needs no
+   account, but Google could change or block it at any time, and it may
+   rate-limit under heavy use. Fine for a prototype; for a robust app, switch
+   to a proper translation API (e.g. DeepL free tier) with a key.
+   `from` is the source language code (e.g. 'sr','th','mn'); 'auto' also works. */
+async function translateToEnglish(text, from = 'auto') {
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx` +
+                `&sl=${from}&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    // Response is a nested array; the translated chunks are in j[0], each [translated, original, ...]
+    if (!Array.isArray(j) || !Array.isArray(j[0])) return null;
+    return j[0].map(seg => (seg && seg[0]) ? seg[0] : '').join('');
+  } catch (e) {
+    console.log('translate failed:', e);
+    return null;
+  }
+}
+
+
+/* Wikipedia-coordinate sanity check.
+   Some fuzzy name searches can find a correct-sounding article in the wrong
+   city/country. If Wikipedia gives coordinates, reject the description unless
+   those coordinates fall inside the current search area: the route corridor or
+   the 3 km nearby circle. Exact OSM wikipedia/wikidata links are still checked;
+   this protects against bad OSM tags too. */
+function wikiCoordinatesFitSearch(info, stop) {
+  try {
+    if (!info || !info.coord) return true;
+    if (!currentSearchArea || typeof turf === 'undefined') return true;
+
+    const wikiPt = turf.point([Number(info.coord.lng), Number(info.coord.lat)]);
+    if (turf.booleanPointInPolygon(wikiPt, currentSearchArea)) return true;
+
+    // Small tolerance for big places whose Wikipedia coordinate is slightly
+    // outside the exact Overpass/corridor geometry. If it is still very close
+    // to the OSM point, allow it. Otherwise it is likely the wrong article.
+    const stopPt = turf.point([Number(stop.lng), Number(stop.lat)]);
+    const kmFromStop = turf.distance(stopPt, wikiPt, { units: 'kilometers' });
+    if (kmFromStop <= 0.75) return true;
+
+    console.log('Rejected Wikipedia match outside search area:', {
+      stop: stop.name, wikiTitle: info.title, wikiCoord: info.coord, kmFromStop
+    });
+    return false;
+  } catch (e) {
+    console.log('Wiki coordinate check skipped:', e);
+    return true;
+  }
+}
+
+function validWikiResult(info, stop) {
+  return info && wikiCoordinatesFitSearch(info, stop) ? info : null;
+}
+
+/* Main enrichment: takes the whole stop object so it can see OSM tags. */
+async function fetchSummary(stop) {
+  // ---- Tier 1: precise OSM links (reliable, never the wrong place) ----
+  // 1a) wikipedia tag, e.g. "en:Park Imperial" -> split into lang + title
+  if (stop.wikipedia && stop.wikipedia.includes(':')) {
+    const idx = stop.wikipedia.indexOf(':');
+    const lang = stop.wikipedia.slice(0, idx);
+    const title = stop.wikipedia.slice(idx + 1);
+    const res = await fetchByTitle(title, lang);
+    const checked = validWikiResult(res, stop);
+    if (checked) return checked;
+  }
+  // 1b) wikidata ID -> resolve to an article (prefers local language)
+  if (stop.wikidata) {
+    const res = await fetchByWikidata(stop.wikidata, routeWikiLang);
+    const checked = validWikiResult(res, stop);
+    if (checked) return checked;
+  }
+
+  // ---- Tier 2: no precise OSM link -> best-effort name SEARCH.
+  //      Coverage-first: accept whatever search finds (local language first,
+  //      then English), accepting occasional wrong-place / wrong-concept
+  //      matches as the cost of finding lesser-known places. ----
+  if (routeWikiLang && routeWikiLang !== 'en') {
+    const local = await fetchFromWiki(stop.name, routeWikiLang, stop.lat, stop.lng);
+    const checked = validWikiResult(local, stop);
+    if (checked) return checked;
+  }
+  const en = await fetchFromWiki(stop.name, 'en', stop.lat, stop.lng);
+  const checked = validWikiResult(en, stop);
+  if (checked) return checked;
+
+  return null;   // genuinely nothing found -> honest "no description"
+}
+
+
+/* =====================================================================
+   COMMUNITY PHOTOS + DESCRIPTIONS — RoadScout user contributions
+   ===================================================================== */
+let activeUploadStop = null;
+let activeUploadStatusId = null;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[c]));
+}
+
+function countChars(text) {
+  return Array.from(String(text || '')).length;
+}
+
+function limitChars(text, maxChars = 300) {
+  return Array.from(String(text || '')).slice(0, maxChars).join('');
+}
+
+function safeFilePart(s) {
+  return String(s || 'roadscout-place')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'roadscout-place';
+}
+
+function setUploadStatus(msg, success = false) {
+  const el = activeUploadStatusId ? document.getElementById(activeUploadStatusId) : null;
+  if (!el) return;
+  if (success) {
+    el.innerHTML = `<div style="padding:8px;border-radius:7px;background:#ecfdf5;border:1px solid #86efac;color:#166534;font-weight:bold;">${escapeHtml(msg)}</div>`;
+  } else {
+    el.textContent = msg;
+  }
+}
+
+function updateSelectedPhotoCount() {
+  const input = document.getElementById('userPhotoInput');
+  const countEl = document.getElementById('userPhotoSelectedCount');
+  if (!input || !countEl) return;
+  const count = input.files ? input.files.length : 0;
+  if (count === 0) {
+    countEl.textContent = 'No photos selected.';
+    countEl.style.color = 'var(--muted)';
+  } else if (count > 5) {
+    countEl.textContent = `${count} photos selected. Maximum is 5. Please remove ${count - 5}.`;
+    countEl.style.color = '#b91c1c';
+  } else {
+    countEl.textContent = `${count} photo${count === 1 ? '' : 's'} selected. They will wait for approval.`;
+    countEl.style.color = 'var(--muted)';
+  }
+}
+
+async function resizeImageFileToJpeg(file, maxSize = 1200, quality = 0.75) {
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.type || '')) {
+    throw new Error('Please use JPG, PNG or WEBP. HEIC is not supported yet.');
+  }
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not read image. Try JPG, PNG or WEBP.'));
+    image.src = dataUrl;
+  });
+  let w = img.width;
+  let h = img.height;
+  if (w > h && w > maxSize) {
+    h = Math.round(h * maxSize / w);
+    w = maxSize;
+  } else if (h >= w && h > maxSize) {
+    w = Math.round(w * maxSize / h);
+    h = maxSize;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob) throw new Error('Could not resize image.');
+  return blob;
+}
+
+async function getApprovedRoadPhotos(stop, limit = 5) {
+  try {
+    if (!supaReady || !supa) return [];
+    const lat = Number(stop.lat);
+    const lon = Number(stop.lng);
+    const tol = 0.001;
+    const { data, error } = await supa
+      .from(ROAD_PHOTO_TABLE)
+      .select('image_url, description, created_at, place_name')
+      .eq('status', 'approved')
+      .gte('place_lat', lat - tol)
+      .lte('place_lat', lat + tol)
+      .gte('place_lon', lon - tol)
+      .lte('place_lon', lon + tol)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.log('approved RoadScout photo lookup failed:', error.message || error);
+      return [];
+    }
+    return (data || []).filter(row => row.image_url || row.description).map(row => ({
+      url: row.image_url || '',
+      source: 'RoadScout community contribution',
+      description: row.description || ''
+    }));
+  } catch (e) {
+    console.log('approved RoadScout photo lookup failed:', e);
+    return [];
+  }
+}
+
+function renderCommunityPhotos(photos) {
+  if (!photos || !photos.length) {
+    return '<div class="no-photo">No approved community photos or descriptions yet.</div>';
+  }
+  const imgs = photos.filter(p => p.url).map((p, idx) =>
+    `<img src="${escapeHtml(p.url)}" alt="RoadScout community photo ${idx + 1}">`
+  ).join('');
+  const descriptions = photos.filter(p => p.description).map(p =>
+    `<div class="community-description">${escapeHtml(p.description)}</div>`
+  ).join('');
+  return `${imgs ? `<div class="community-gallery">${imgs}</div>` : ''}${descriptions}<div class="photo-note">Source: RoadScout community contributions</div>`;
+}
+
+async function uploadPhotosForCurrentStop() {
+  if (!activeUploadStop) {
+    setUploadStatus('No selected place.');
+    return;
+  }
+  if (!supaReady || !supa) {
+    setUploadStatus('Supabase is not available.');
+    return;
+  }
+  const input = document.getElementById('userPhotoInput');
+  const descEl = document.getElementById('userPhotoDesc');
+  const files = input && input.files ? Array.from(input.files) : [];
+  const rawDescription = descEl ? descEl.value.trim() : '';
+  const charCount = countChars(rawDescription);
+  const description = limitChars(rawDescription, 300);
+
+  if (charCount > 300) {
+    setUploadStatus('Description is too long. Please keep it to 300 characters.');
+    return;
+  }
+  if (files.length > 5) {
+    setUploadStatus('Please choose no more than 5 photos.');
+    return;
+  }
+  if (!files.length && !description) {
+    setUploadStatus('Choose up to 5 photos or write a description first.');
+    return;
+  }
+
+  try {
+    const stop = activeUploadStop;
+    const insertedRows = [];
+    if (files.length) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadStatus(`Resizing photo ${i + 1} of ${files.length}...`);
+        const smallBlob = await resizeImageFileToJpeg(file, 1200, 0.75);
+        const fileName = `${safeFilePart(stop.name)}_${Number(stop.lat).toFixed(5)}_${Number(stop.lng).toFixed(5)}_${Date.now()}_${i + 1}.jpg`;
+        const path = `${USER_TOKEN}/${fileName}`;
+        setUploadStatus(`Uploading photo ${i + 1} of ${files.length}. Please wait.`);
+        const { error: uploadError } = await supa.storage
+          .from(ROAD_PHOTO_BUCKET)
+          .upload(path, smallBlob, { contentType: 'image/jpeg', upsert: false });
+        if (uploadError) throw uploadError;
+        const { data: publicData } = supa.storage
+          .from(ROAD_PHOTO_BUCKET)
+          .getPublicUrl(path);
+        insertedRows.push({
+          place_id: stop.id,
+          place_name: stop.name,
+          place_lat: stop.lat,
+          place_lon: stop.lng,
+          description: description,
+          image_url: publicData?.publicUrl || '',
+          storage_path: path,
+          user_token: USER_TOKEN,
+          status: 'pending',
+          app_version: APP_VERSION
+        });
+      }
+    } else {
+      insertedRows.push({
+        place_id: stop.id,
+        place_name: stop.name,
+        place_lat: stop.lat,
+        place_lon: stop.lng,
+        description: description,
+        image_url: '',
+        storage_path: '',
+        user_token: USER_TOKEN,
+        status: 'pending',
+        app_version: APP_VERSION
+      });
+    }
+
+    setUploadStatus('Saving contribution details...');
+    const { error: dbError } = await supa.from(ROAD_PHOTO_TABLE).insert(insertedRows);
+    if (dbError) throw dbError;
+
+    setUploadStatus(
+      files.length
+        ? `${files.length} photo${files.length === 1 ? '' : 's'} uploaded. They are waiting for approval.`
+        : 'Description uploaded. It is waiting for approval.',
+      true
+    );
+    if (input) input.value = '';
+    if (descEl) descEl.value = '';
+    const wc = document.getElementById('userPhotoWordCount');
+    if (wc) wc.textContent = '0 / 300 characters';
+    updateSelectedPhotoCount();
+    trackEvent('roadscout_user_photo_uploaded', 'photo', {
+      place_id: stop.id,
+      place_name: stop.name,
+      place_lat: stop.lat,
+      place_lon: stop.lng,
+      photo_count: files.length,
+      has_description: !!description
+    });
+  } catch (e) {
+    console.warn('RoadScout upload failed', e);
+    let detail = 'unknown error';
+    try {
+      if (e && typeof e === 'object') detail = e.message || e.error_description || e.error || e.statusText || JSON.stringify(e);
+      else if (e) detail = String(e);
+    } catch (_) {}
+    setUploadStatus('Upload failed: ' + detail);
+  }
+}
+
+function wireContributionControls(stop) {
+  activeUploadStop = stop;
+  activeUploadStatusId = 'roadUploadStatus';
+  setTimeout(() => {
+    const desc = document.getElementById('userPhotoDesc');
+    const wc = document.getElementById('userPhotoWordCount');
+    if (desc && wc) {
+      desc.addEventListener('input', () => {
+        const chars = countChars(desc.value);
+        wc.textContent = `${chars} / 300 characters`;
+        wc.style.color = chars > 300 ? '#b91c1c' : 'var(--muted)';
+      });
+    }
+    const photoInput = document.getElementById('userPhotoInput');
+    if (photoInput) {
+      photoInput.addEventListener('change', updateSelectedPhotoCount);
+      updateSelectedPhotoCount();
+    }
+    const uploadBtn = document.getElementById('roadUploadButton');
+    if (uploadBtn) uploadBtn.onclick = uploadPhotosForCurrentStop;
+  }, 50);
+}
+
+/* =====================================================================
+   STAGE 3b — ratings, now backed by Supabase (persistent, shared).
+   These were once the only in-memory placeholders; now they talk to a
+   real database. Everything else in the app is unchanged.
+   ===================================================================== */
+
+/* Save (or update) this device's verdict for a place. If the user clicks
+   a different verdict than they cast before, we DELETE the old one and
+   insert the new — net effect: one verdict per device per place. */
+async function saveVerdict(poiId, verdict) {
+  if (!supaReady || !supa) {
+    console.log('Supabase not ready — verdict not saved.');
+    return;
+  }
+  try {
+    // remove any prior verdict from this device on this place
+    await supa.from('verdicts')
+      .delete()
+      .eq('place_id', poiId)
+      .eq('user_token', USER_TOKEN);
+    // insert the new one
+    const { error } = await supa.from('verdicts').insert({
+      place_id: poiId,
+      verdict: verdict,
+      user_token: USER_TOKEN
+    });
+    if (error) console.log('saveVerdict error:', error.message);
+    // invalidate cached tally so the next read fetches fresh counts
+    delete tallyCache[poiId];
+  } catch (e) {
+    console.log('saveVerdict failed:', e);
+  }
+}
+
+/* Fetch the community tally for a place: counts of good/meh/skip across
+   ALL users, plus what THIS device cast (so we can highlight it). */
+async function getTally(poiId) {
+  // serve from cache if we've fetched it recently in this session
+  if (tallyCache[poiId]) return tallyCache[poiId];
+
+  if (!supaReady || !supa) {
+    return { good: 0, meh: 0, skip: 0, mine: null };
+  }
+  try {
+    const { data, error } = await supa.from('verdicts')
+      .select('verdict, user_token')
+      .eq('place_id', poiId);
+    if (error) {
+      console.log('getTally error:', error.message);
+      return { good: 0, meh: 0, skip: 0, mine: null };
+    }
+    let good = 0, meh = 0, skip = 0, mine = null;
+    for (const row of (data || [])) {
+      if (row.verdict === 'good') good++;
+      else if (row.verdict === 'meh') meh++;
+      else if (row.verdict === 'skip') skip++;
+      if (row.user_token === USER_TOKEN) mine = row.verdict;
+    }
+    const tally = { good, meh, skip, mine };
+    tallyCache[poiId] = tally;
+    return tally;
+  } catch (e) {
+    console.log('getTally failed:', e);
+    return { good: 0, meh: 0, skip: 0, mine: null };
+  }
+}
+
+/* =====================================================================
+   RENDERING — draw the alternative routes (coloured, clickable), then
+   draw pins for whichever route the user selects.
+   ===================================================================== */
+
+function clearSearchCircle() {
+  if (!mapReady || !map) return;
+  if (map.getLayer('nearby-circle-fill')) map.removeLayer('nearby-circle-fill');
+  if (map.getLayer('nearby-circle-line')) map.removeLayer('nearby-circle-line');
+  if (map.getSource('nearby-circle')) map.removeSource('nearby-circle');
+}
+
+function clearRouteLayers() {
+  if (!mapReady || !map || !currentRoutes) return;
+  currentRoutes.forEach((_, i) => {
+    if (map.getLayer('route-' + i)) map.removeLayer('route-' + i);
+    if (map.getLayer('route-hit-' + i)) map.removeLayer('route-hit-' + i);
+    if (map.getSource('route-' + i)) map.removeSource('route-' + i);
+  });
+}
+
+function drawSearchCircle(circleGeojson, options = {}) {
+  if (!mapReady || !map || !circleGeojson) return;
+  if (!map.isStyleLoaded()) {
+    whenMapStyleReady(() => drawSearchCircle(circleGeojson, options));
+    return;
+  }
+  clearSearchCircle();
+  map.addSource('nearby-circle', { type: 'geojson', data: circleGeojson });
+  map.addLayer({
+    id: 'nearby-circle-fill', type: 'fill', source: 'nearby-circle',
+    paint: { 'fill-color': '#2f6b4f', 'fill-opacity': 0.12 }
+  });
+  map.addLayer({
+    id: 'nearby-circle-line', type: 'line', source: 'nearby-circle',
+    paint: { 'line-color': '#2f6b4f', 'line-width': 3, 'line-opacity': 0.9 }
+  });
+  if (options.fit !== false && typeof turf !== 'undefined') {
+    const [w, s, e, n] = turf.bbox(circleGeojson);
+    map.fitBounds([[w, s], [e, n]], { padding: 50 });
+  }
+}
+
+/* Draw ALL alternative routes, each in its own colour. Clicking a route
+   (on the map) selects it and triggers the scan. The selected route is
+   drawn bold/opaque; the others are dimmed so the choice is clear. */
+function drawRoutes(routes, options = {}) {
+  if (!mapReady || !map) return;
+
+  // MapLibre cannot add custom layers until the CURRENT style has loaded.
+  // The map "load" event only fires once in the map lifetime; after Streets /
+  // Outdoor / Satellite switching we must wait for style.load/idle instead.
+  if (!map.isStyleLoaded()) {
+    whenMapStyleReady(() => drawRoutes(routes, options));
+    return;
+  }
+
+  // remove any previous route layers/sources
+  routes.forEach((_, i) => {
+    if (map.getLayer('route-' + i)) map.removeLayer('route-' + i);
+    if (map.getLayer('route-hit-' + i)) map.removeLayer('route-hit-' + i);
+    if (map.getSource('route-' + i)) map.removeSource('route-' + i);
+  });
+
+  routes.forEach((route, i) => {
+    const selected = (i === selectedRouteIdx);
+    map.addSource('route-' + i, { type: 'geojson', data: route.geometry });
+
+    // a fat invisible "hit" line on top makes routes easy to click
+    map.addLayer({
+      id: 'route-hit-' + i, type: 'line', source: 'route-' + i,
+      paint: { 'line-color': '#000', 'line-opacity': 0, 'line-width': 22 }
+    });
+    // the visible coloured line
+    map.addLayer({
+      id: 'route-' + i, type: 'line', source: 'route-' + i,
+      paint: {
+        'line-color': ROUTE_COLORS[i % ROUTE_COLORS.length],
+        'line-width': selected ? 6 : 4,
+        'line-opacity': (selectedRouteIdx === null || selected) ? 1 : 0.35
+      }
+    });
+
+    // click handler -> select & scan this route
+    map.on('click', 'route-hit-' + i, () => selectRoute(i));
+    map.on('mouseenter', 'route-hit-' + i, () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', 'route-hit-' + i, () => map.getCanvas().style.cursor = '');
+  });
+
+  // Fit to bounds only after new route search / route selection. Do not zoom-jump
+  // when the user is simply changing Streets / Outdoor / Satellite.
+  if (options.fit !== false && routes[0] && typeof turf !== 'undefined') {
+    const [w, s, e, n] = turf.bbox(routes[0].geometry);
+    map.fitBounds([[w, s], [e, n]], { padding: 50 });
+  }
+}
+
+
+/* Return only the categories currently switched on. The original displayNum
+   stays fixed, so hiding categories leaves gaps rather than renumbering. */
+function getVisibleStops() {
+  const selected = new Set(getSelectedCategories());
+  return currentStops.filter(s => selected.has(s.category));
+}
+
+function clearPins() {
+  currentMarkers.forEach(m => m.remove());
+  currentMarkers = [];
+}
+
+/* Draw the numbered POI pins for the currently visible categories. */
+function drawPins(stops) {
+  if (!mapReady || !map || typeof maplibregl === 'undefined') return;
+
+  clearPins();
+
+  // Markers are DOM elements, so they do NOT need to wait for map style layers.
+  // The previous version waited on map.loaded(); after the first load event had
+  // already passed, that could leave pins waiting forever. Add them immediately.
+  stops.forEach((s, i) => {
+    if (s.lng == null || s.lat == null) return;
+
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'roadscout-pin';
+    el.style.cssText = 'width:26px;height:26px;border-radius:50%;background:#2f6b4f;' +
+      'color:#fff;font:700 12px Arial,sans-serif;display:grid;place-items:center;cursor:pointer;' +
+      'border:2px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.55);z-index:9999;padding:0;' +
+      'line-height:1;appearance:none;-webkit-appearance:none';
+    el.textContent = s.displayNum || (i + 1);
+    el.title = `${s.displayNum || (i + 1)}. ${s.name}`;
+    el.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openDetail(s.id);
+    });
+
+    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([Number(s.lng), Number(s.lat)])
+      .addTo(map);
+    currentMarkers.push(marker);
+  });
+}
+
+function renderList(stops) {
+  const ul = $('stops');
+  ul.innerHTML = '';
+  $('empty').style.display = stops.length ? 'none' : 'block';
+  stops.forEach((s, i) => {
+    const li = document.createElement('li');
+    li.className = 'stop';
+    li.dataset.id = s.id;
+    li.innerHTML = `
+      <span class="seq">${s.displayNum || i+1}</span>
+      <h3>${s.name}</h3>
+      <div class="meta">${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km into the trip · ${(s.detourKm*1000).toFixed(0)} m off route`}</div>
+      <span class="kind">${s.kind}</span>`;
+    li.onclick = () => openDetail(s.id);
+    ul.appendChild(li);
+  });
+}
+
+function renderVisibleStops() {
+  const visible = getVisibleStops();
+  drawPins(visible);
+  renderList(visible);
+  if (currentStops.length) {
+    const hidden = currentStops.length - visible.length;
+    const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
+    status(`Showing ${visible.length} of ${currentStops.length} stops${hidden ? ` (${hidden} hidden by category switches)` : ''}${langNote}.`);
+  }
+}
+
+async function openDetail(poiId) {
+  activeStopId = poiId;
+  const s = currentStops.find(x => x.id === poiId);
+  if (!s) return;
+  trackEvent('attraction_open', s.nearbyMode ? 'near_me' : 'route', { category: s.category, kind: s.kind });
+  const num = s.displayNum || (currentStops.findIndex(x => x.id === poiId) + 1);  // permanent route-order number
+  document.querySelectorAll('.stop').forEach(el =>
+    el.classList.toggle('active', el.dataset.id === poiId));
+
+  const body = $('detailBody');
+  body.innerHTML = `<h2><span class="num-badge">${num}</span> ${s.name}</h2>
+    <div class="meta" style="color:var(--muted);font-size:13px">
+      ${s.kind} · ${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour`}</div>
+    <div class="summary">Loading description…</div>`;
+  $('detail').classList.add('open');
+
+  // enrichment (Wikipedia) — pass the whole stop so it can use OSM tags
+  const info = await fetchSummary(s);
+  const t = await getTally(poiId);
+  const communityPhotos = await getApprovedRoadPhotos(s, 5);
+  const addrLine = s.addr ? `<div class="meta" style="color:var(--muted);font-size:12px;margin-top:2px">📍 ${s.addr}</div>` : '';
+  const descHtml = info && info.text
+    ? info.text
+    : 'No description found for this place.';
+  // Show a translate button only when we have a description that isn't English.
+  const showTranslate = info && info.text && info.lang && info.lang !== 'en';
+  const translateBtn = showTranslate
+    ? `<button id="translateBtn" style="margin-top:8px;padding:6px 12px;font:inherit;font-size:13px;
+         border:1px solid var(--rule);border-radius:6px;background:#fff;cursor:pointer">
+         🌐 Translate to English (${info.lang})</button>`
+    : '';
+  body.innerHTML = `
+    <h2 id="titleText"><span class="num-badge">${num}</span> ${s.name}</h2>
+    <div class="meta" style="color:var(--muted);font-size:13px">
+      ${s.kind} · ${s.nearbyMode ? `${s.detourKm.toFixed(1)} km from your location` : `${s.alongKm.toFixed(0)} km in · ${(s.detourKm*1000).toFixed(0)} m detour`}</div>
+    ${addrLine}
+    ${info && info.img ? `<img src="${info.img}" alt="">` : ''}
+    <div class="summary" id="summaryText">${descHtml}</div>
+    ${translateBtn}
+
+    <div class="verdict-q">Did you stop here? Your verdict:</div>
+    <div class="verdicts">
+      <button id="v-good" class="${t.mine==='good'?'sel-good':''}">Yes</button>
+      <button id="v-meh"  class="${t.mine==='meh' ?'sel-meh' :''}">0</button>
+      <button id="v-skip" class="${t.mine==='skip'?'sel-skip':''}">No</button>
+    </div>
+    <div class="tally">Community: <b>${t.good}</b> yes · <b>${t.meh}</b> 0 · <b>${t.skip}</b> no
+      <br><span style="font-size:11px">(shared across all visitors — your verdict is saved)</span></div>
+
+    <div class="community-section">
+      <h3>Community photos and notes</h3>
+      <div id="communityPhotos">${renderCommunityPhotos(communityPhotos)}</div>
+    </div>
+
+    <div class="community-section">
+      <h3>Share your experience</h3>
+      <div class="upload-box">
+        <div class="photo-note">Add up to 5 photos. Optional description up to 300 characters. Contributions wait for approval.</div>
+        <input id="userPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+        <div id="userPhotoSelectedCount" class="word-count">No photos selected.</div>
+        <textarea id="userPhotoDesc" placeholder="Optional description, max 300 characters"></textarea>
+        <div id="userPhotoWordCount" class="word-count">0 / 300 characters</div>
+        <button type="button" id="roadUploadButton">Upload photos / description</button>
+        <div id="roadUploadStatus" class="photo-note">No upload yet.</div>
+      </div>
+    </div>`;
+
+  // Translate button handler: translates BOTH the title and the description.
+  if (showTranslate) {
+    $('translateBtn').onclick = async () => {
+      const btn = $('translateBtn');
+      btn.textContent = 'Translating…';
+      btn.disabled = true;
+      // translate title and description in parallel for speed
+      const [tTitle, tDesc] = await Promise.all([
+        translateToEnglish(s.name, info.lang),
+        translateToEnglish(info.text, info.lang)
+      ]);
+      if (tDesc) $('summaryText').textContent = tDesc;
+      if (tTitle) $('titleText').innerHTML = `<span class="num-badge">${num}</span> ${tTitle}`;
+      if (tDesc || tTitle) {
+        btn.textContent = '✓ Translated to English';
+      } else {
+        btn.textContent = '⚠ Translation failed — try again';
+        btn.disabled = false;
+      }
+    };
+  }
+
+  wireContributionControls(s);
+
+    $('v-good').onclick = async () => { await saveVerdict(poiId,'good'); openDetail(poiId); };
+    $('v-meh').onclick  = async () => { await saveVerdict(poiId,'meh');  openDetail(poiId); };
+    $('v-skip').onclick = async () => { await saveVerdict(poiId,'skip'); openDetail(poiId); };
+}
+
+$('back').onclick = () => {
+  $('detail').classList.remove('open');   // hide detail -> list reappears
+  $('detail').scrollTop = 0;              // reset scroll for next time
+};
+
+/* Wire up the map style switcher buttons */
+document.querySelectorAll('.style-btn').forEach(btn => {
+  btn.onclick = () => switchMapStyle(btn.dataset.style);
+});
+
+/* Predictive country/place search wiring */
+if ($('countrySearch')) {
+  $('countrySearch').addEventListener('input', scheduleCountrySuggestions);
+  $('countrySearch').addEventListener('focus', () => showCountrySuggestions($('countrySearch').value));
+  $('countrySearch').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const first = $('countrySuggestions')?.querySelector('button');
+      if (first) first.click();
+      else setCountry($('countrySearch').value.trim() || 'Worldwide');
+    }
+  });
+}
+if ($('from')) {
+  $('from').addEventListener('input', () => schedulePlaceSuggestions('from'));
+  $('from').addEventListener('keydown', e => { if (e.key === 'Enter') drawSelectedMode(); });
+}
+if ($('to')) {
+  $('to').addEventListener('input', () => schedulePlaceSuggestions('to'));
+  $('to').addEventListener('keydown', e => { if (e.key === 'Enter') drawSelectedMode(); });
+}
+
+/* Category switches hide/show already-found stops without renumbering them. */
+document.querySelectorAll('.cat').forEach(cb => {
+  cb.addEventListener('change', () => {
+    if (currentStops && currentStops.length) renderVisibleStops();
+  });
+});
+
+/* =====================================================================
+   selectRoute — called when the user clicks one of the coloured routes.
+   It highlights that route and scans ONLY it for cultural attractions.
+   ===================================================================== */
+async function selectRoute(idx) {
+  selectedRouteIdx = idx;
+  const route = currentRoutes[idx];
+
+  currentCircle = null;
+  currentSearchArea = null;
+  clearSearchCircle();
+
+  // redraw routes so the chosen one is bold and the others dim
+  drawRoutes(currentRoutes);
+
+  const km = (route.distance / 1000).toFixed(0);
+  status(`Scanning route ${idx + 1} (${km} km) for cultural attractions…`);
+  $('stops').innerHTML = '';
+  clearPins();
+  $('detail').classList.remove('open');
+
+  try {
+    // Detect the local Wikipedia language from the MIDPOINT of this route.
+    // turf.along finds the point at half the route's length. We then reverse-
+    // geocode it to a country and map that to a Wikipedia language.
+    const mid = turf.along(route.geometry, turf.length(route.geometry) / 2, { units: 'kilometers' });
+    const [mLng, mLat] = mid.geometry.coordinates;
+    routeWikiLang = await detectWikiLang(mLng, mLat);
+    if (routeWikiLang) status(`Route ${idx + 1}: local language detected (${routeWikiLang}). Scanning…`);
+
+    const widthKm = parseFloat($('width').value) || 1;
+    const maxDetourKm = parseFloat($('maxDetour').value) || 2;
+    const selectedCategories = getSelectedCategories();
+    currentStops = await corridorScan(route.geometry, widthKm, maxDetourKm, selectedCategories);
+    trackEvent('route_search', 'route', {
+      country: currentCountry,
+      from: $('from') ? $('from').value : null,
+      to: $('to') ? $('to').value : null,
+      width_km: widthKm,
+      max_detour_km: maxDetourKm,
+      categories: selectedCategories,
+      results: currentStops.length
+    });
+    const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
+    status(`Route ${idx + 1}: found ${currentStops.length} stops along the way${langNote}.`);
+    renderVisibleStops();
+  } catch (e) {
+    status('⚠ ' + e.message);
+  }
+}
+
+/* =====================================================================
+   MAIN — fetch the alternative routes and display them. The scan no
+   longer happens automatically; it waits for the user to click a route.
+   ===================================================================== */
+async function showRoutesFromInputs() {
+  if (!turfReady) {
+    status('⚠ The geometry library (Turf) failed to load — check your connection and refresh.');
+    return;
+  }
+  const btn = $('go');
+  btn.disabled = true;
+  $('stops').innerHTML = '';
+  selectedRouteIdx = null;
+  currentStops = [];
+  currentCircle = null;
+  clearPins();
+  clearSearchCircle();
+  routeWikiLang = null;   // reset; will be re-detected for the chosen route
+  try {
+    status('Finding start and destination…');
+    const from = await resolvePlaceFromInput('from');
+    const to   = await resolvePlaceFromInput('to');
+
+    status('Calculating routes…');
+    currentRoutes = await getRoutes(from, to);
+
+    drawRoutes(currentRoutes);
+
+    if (currentRoutes.length === 1) {
+      // only one path exists — just scan it, no need to choose
+      status('Only one route found — scanning it…');
+      await selectRoute(0);
+    } else {
+      // show the choice and let the user pick
+      $('empty').style.display = 'block';
+      const lines = currentRoutes.map((r, i) =>
+        `Route ${i + 1}: ${(r.distance / 1000).toFixed(0)} km`).join('  ·  ');
+      status(`Found ${currentRoutes.length} routes — ${lines}. Click a coloured route on the map to scan it.`);
+      $('empty').textContent = 'Click one of the coloured routes on the map to find its cultural attractions.';
+    }
+  } catch (e) {
+    status('⚠ ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function scanNearLocation(lat, lng) {
+  if (!turfReady) {
+    status('⚠ The geometry library (Turf) failed to load — check your connection and refresh.');
+    return;
+  }
+  const btn = $('go');
+  btn.disabled = true;
+  $('stops').innerHTML = '';
+  $('detail').classList.remove('open');
+  currentStops = [];
+  selectedRouteIdx = null;
+  clearPins();
+  clearRouteLayers();
+  currentRoutes = [];
+  routeWikiLang = await detectWikiLang(lng, lat);
+
+  try {
+    status('Scanning a 3 km circle around your location…');
+    const selectedCategories = getSelectedCategories();
+    const result = await circleScan(lng, lat, 3, selectedCategories);
+    currentCircle = result.circle;
+    currentStops = result.stops;
+    trackEvent('near_me_search', 'near_me', {
+      radius_km: 3,
+      categories: selectedCategories,
+      results: currentStops.length
+    });
+    drawSearchCircle(currentCircle);
+    renderVisibleStops();
+    const langNote = routeWikiLang ? ` · descriptions: ${routeWikiLang}/en` : '';
+    status(`Nearby search: found ${currentStops.length} stops within 3 km${langNote}.`);
+  } catch (e) {
+    status('⚠ ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function useMyLocation() {
+  const useLocationToggle = $('useLocationToggle');
+  if (useLocationToggle) useLocationToggle.checked = true;
+  if (!navigator.geolocation) {
+    status('⚠ This browser does not support location. Turn off “Use my location” to show Los Angeles → Santa Monica.');
+    return;
+  }
+  status('Waiting for location permission…');
+  navigator.geolocation.getCurrentPosition(
+    pos => scanNearLocation(pos.coords.latitude, pos.coords.longitude),
+    err => {
+      status('Location was not allowed. Turn off “Use my location” and press Show Attractions to use Los Angeles → Santa Monica.');
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+  );
+}
+
+function drawSelectedMode() {
+  const useLocation = $('useLocationToggle')?.checked;
+  if (useLocation) useMyLocation();
+  else showRoutesFromInputs();
+}
+
+$('go').onclick = drawSelectedMode;
+
+window.addEventListener('load', () => {
+  trackEvent('app_open', 'startup', {});
+  // Start with the visible default route. If the user turns on the location checkbox,
+  // Show Attractions will switch to the 3 km nearby search.
+  setTimeout(() => showRoutesFromInputs(), 500);
+});
+</script>
 </body>
 </html>
